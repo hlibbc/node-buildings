@@ -1,0 +1,19 @@
+{
+  "name": "ethereum-poa-native",
+  "version": "1.0.0",
+  "scripts": {
+    "generate": "./setup.sh generate",
+    "init": "./setup.sh init",
+    "run:consensus": "./setup.sh run-consensus",
+    "run:rpc": "./setup.sh run-rpc",
+    "attach": "./setup.sh attach",
+    "status": "./setup.sh status",
+    "clean": "./setup.sh clean",
+    "stop": "./setup.sh stop",
+    "logs": "./setup.sh logs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}
