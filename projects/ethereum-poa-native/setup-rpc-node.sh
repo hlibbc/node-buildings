@@ -21,6 +21,7 @@ else
     echo "Error: $env_file does not exist."
     exit 1
 fi
+ROOT_DIR="${ROOT_DIR:-$SCRIPT_DIR}"  # .env 에 ROOT_DIR 이 비어 있으면 스크립트 위치로 fallback
 
 mkdir -p "$CONFIG_DIR" "$BACKUP_DIR" "$EXECUTION_ROOT" # 💡 필요한 디렉토리 자동 생성
 echo "== 🛠️ Set ENV $env_file (Direct Geth Execution)\n"
@@ -73,7 +74,8 @@ case "$1" in
         fi
         _NETWORK_ID=${NETWORK_ID:-$CHAIN_ID}
 
-        ### rpc 전용: non-signer, personal/debug/miner/allow-insecure-unlock 제외, authrpc 불필요
+        ### rpc 전용: non-signer, personal/debug/miner/allow-insecure-unlock 제외
+        ### geth 1.13.x authrpc 자동 시작 — 포트 충돌 방지를 위해 명시 지정
         nohup $GETH_BIN \
             --datadir $EXECUTION_ROOT/data \
             --syncmode=full \
@@ -91,13 +93,27 @@ case "$1" in
             --ws.port=$GETH_WS_PORT \
             --ws.origins=* \
             --nodiscover \
+            --authrpc.addr=127.0.0.1 \
+            --authrpc.port=${GETH_AUTH_RPC_PORT:-8551} \
+            --authrpc.jwtsecret=$CONFIG_DIR/jwtsecret \
             > geth-rpc.log 2>&1 &
-
-        echo "Geth RPC Node started in background. Check geth-rpc.log for logs."
+        _GETH_PID=$!
+        sleep 2
+        if kill -0 $_GETH_PID 2>/dev/null; then
+            echo "Geth RPC started (PID: $_GETH_PID). Check geth-rpc.log for logs."
+        else
+            echo "ERROR: Geth RPC failed to start. Last log lines:"
+            tail -5 geth-rpc.log
+            exit 1
+        fi
         ;;
     "attach"|"a")
-        echo "Attaching to geth node via IPC -- 🚀"
-        # ipc로 연결
+        if [ ! -S "$EXECUTION_ROOT/data/geth.ipc" ]; then
+            echo "ERROR: IPC not found ($EXECUTION_ROOT/data/geth.ipc)"
+            echo "Tip: check status: ./setup-rpc-node.sh status"
+            echo "     or check log:  tail -20 geth-rpc.log"
+            exit 1
+        fi
         $GETH_BIN attach $EXECUTION_ROOT/data/geth.ipc
         ;;
     "stop")

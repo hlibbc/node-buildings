@@ -1,14 +1,25 @@
 # 검증 명령 모음
 
-rpc 노드 HTTP RPC 기준. `<rpc-ip>`, `<port>` 는 rpc.env의 값으로 대체.
+rpc 노드 HTTP RPC 기준. `<rpc-ip>`, `<port>` 는 rpc 인스턴스 `.env` 의 `GETH_HTTP_PORT` 값으로 대체.
 
 ---
 
 ## 프로세스 상태
 
+consensus 인스턴스에서:
+
 ```bash
-./setup.sh --env=consensus.env status
-./setup-rpc-node.sh --env=rpc.env status
+./setup.sh status
+# 또는
+ps -ef | grep '[g]eth'
+```
+
+rpc 인스턴스에서:
+
+```bash
+./setup-rpc-node.sh status
+# 또는
+ps -ef | grep '[g]eth'
 ```
 
 - 기대값: `Geth is running.` + 프로세스 라인 출력
@@ -107,14 +118,37 @@ tail -f geth-rpc.log | grep --line-buffered -E "imported|peer|synced"
 
 ---
 
-## 정지 / 재기동
+## 로그 전체 확인
 
 ```bash
-# consensus
-./setup.sh --env=consensus.env stop
-./setup.sh --env=consensus.env run-consensus
+# consensus 인스턴스
+tail -100 geth.log
 
-# rpc
-./setup-rpc-node.sh --env=rpc.env stop
-./setup-rpc-node.sh --env=rpc.env run
+# rpc 인스턴스
+tail -100 geth-rpc.log
+```
+
+---
+
+## 정지 / 재기동
+
+consensus 인스턴스에서:
+
+```bash
+./setup.sh stop
+./setup.sh run-consensus
+```
+
+rpc 인스턴스에서:
+
+```bash
+./setup-rpc-node.sh stop
+./setup-rpc-node.sh run
+```
+
+강제 종료가 필요한 경우 (datadir 경로 기준):
+
+```bash
+pkill -2 -f "geth.*--datadir.*./var/consensus/data"   # consensus
+pkill -2 -f "geth.*--datadir.*./var/rpc/data"         # rpc
 ```
