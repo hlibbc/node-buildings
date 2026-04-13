@@ -68,6 +68,28 @@ curl -s -X POST http://<rpc-ip>:<GETH_HTTP_PORT> \
 
 ---
 
+## genesis 동일성 검증
+
+consensus / rpc 양쪽 인스턴스에서 각각 실행 후 hash 비교:
+
+```bash
+jq -S . ./genesis/genesis.json | sha256sum
+# 또는
+sha256sum ./genesis/genesis.json
+```
+
+- 기대값: 양쪽 hash 가 동일해야 함. 다르면 rpc node 의 `genesis.json` 이 잘못 배포된 것 — `clean` 후 재배포·재초기화 필요
+
+init 후 콘솔에서 추가 확인:
+
+```javascript
+eth.getBlock(0).hash              // 양쪽 노드에서 동일해야 함
+eth.chainId()                     // .env CHAIN_ID 와 일치 확인
+admin.nodeInfo.protocols.eth.network  // networkId 확인
+```
+
+---
+
 ## [ ] chainId 확인
 
 ```javascript
@@ -90,12 +112,19 @@ eth.blockNumber
 
 ## [ ] peer 연결 확인
 
+현재 구현(`static-nodes.json` 방식)은 geth 1.13.15 에서 deprecated 되어 자동 연결이 성립하지 않는다.
+peer 연결이 안 된 경우 rpc 콘솔(`./setup-rpc-node.sh attach`)에서 수동으로 추가한다.
+
 ```javascript
-net.peerCount
+// peer 수동 추가 (IP 가 127.0.0.1 이면 consensus 실제 IP 로 교체 필수)
+admin.addPeer("enode://<pubkey>@<consensus-real-ip>:<GETH_PORT>")
+// true
+
+net.peerCount    // 기대값: 1 이상
+admin.peers      // 기대값: [{enode: "...", ...}]
 ```
 
-- 기대값: `1` 이상 (consensus ↔ rpc 연결)
-- `0` 이면 `STATIC_PEER_ENODE` 값 및 IP/포트 확인
+- `net.peerCount` 가 `0` 이면: enode 에 실제 도달 가능한 IP 가 지정되어 있는지 확인 (`127.0.0.1` 이면 실제 IP 로 교체)
 
 ---
 
