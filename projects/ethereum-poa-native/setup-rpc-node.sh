@@ -50,24 +50,34 @@ func_execution_help()
 case "$1" in
     "init")
         echo "Run go-ethereum init genesis block -- 🚀"
-        # 지정된 genesis.json을 사용하여 블록체인 초기화
-        $GETH_BIN --datadir $EXECUTION_ROOT/data init $ROOT_DIR/genesis/genesis.json
+        # .env의 CHAIN_ID를 genesis config.chainId에 주입하여 초기화
+        _GENESIS_TMP="$(mktemp /tmp/genesis.XXXXXX.json)"
+        jq --argjson chainId "$CHAIN_ID" '.config.chainId = $chainId' $ROOT_DIR/genesis/genesis.json > "$_GENESIS_TMP"
+        $GETH_BIN --datadir $EXECUTION_ROOT/data init "$_GENESIS_TMP"
+        rm -f "$_GENESIS_TMP"
         ;;
     "run")
         echo "Run go-ethereum RPC Node (Sync Only) -- 🚀"
         
-        # 기존 프로세스가 실행 중인지 확인
-        if pgrep -f "geth.*--datadir.*$EXECUTION_ROOT/data.*rpc" > /dev/null; then
+        # 기존 프로세스가 실행 중인지 확인 (.*rpc 패턴 제거: 실제 cmdline에 "rpc" 문자열 없음)
+        if pgrep -f "geth.*--datadir.*$EXECUTION_ROOT/data" > /dev/null; then
             echo "Geth RPC is already running. Stopping first..."
-            pkill -2 -f "geth.*--datadir.*$EXECUTION_ROOT/data.*rpc" # 실행 중이면 먼저 프로세스 kill (SIGINT) 
+            pkill -2 -f "geth.*--datadir.*$EXECUTION_ROOT/data"
             sleep 2
         fi
-        
-        ### 백그라운드에서 geth 실행 (RPC 노드 - 블록 생성 없이 동기화만)
+
+        # STATIC_PEER_ENODE가 설정된 경우 static-nodes.json 생성 (--nodiscover 환경에서 peer 연결)
+        if [ -n "$STATIC_PEER_ENODE" ]; then
+            mkdir -p $EXECUTION_ROOT/data/geth
+            jq -n --arg e "$STATIC_PEER_ENODE" '[$e]' > $EXECUTION_ROOT/data/geth/static-nodes.json
+        fi
+        _NETWORK_ID=${NETWORK_ID:-$CHAIN_ID}
+
+        ### rpc 전용: non-signer, personal/debug/miner/allow-insecure-unlock 제외, authrpc 불필요
         nohup $GETH_BIN \
             --datadir $EXECUTION_ROOT/data \
             --syncmode=full \
-            --networkid=$CHAIN_ID \
+            --networkid=$_NETWORK_ID \
             --port=$GETH_PORT \
             --http \
             --http.api=eth,net,txpool \
@@ -80,13 +90,9 @@ case "$1" in
             --ws.addr=0.0.0.0 \
             --ws.port=$GETH_WS_PORT \
             --ws.origins=* \
-            --authrpc.vhosts=* \
-            --authrpc.addr=0.0.0.0 \
-            --authrpc.port=$GETH_AUTH_RPC_PORT \
-            --authrpc.jwtsecret=$CONFIG_DIR/jwtsecret \
             --nodiscover \
             > geth-rpc.log 2>&1 &
-        
+
         echo "Geth RPC Node started in background. Check geth-rpc.log for logs."
         ;;
     "attach"|"a")
@@ -96,21 +102,20 @@ case "$1" in
         ;;
     "stop")
         echo "Stopping geth RPC process -- 🛑"
-        # geth RPC 프로세스 kill (SIGINT) -> 중지
-        pkill -2 -f "geth.*--datadir.*$EXECUTION_ROOT/data.*rpc"
+        pkill -2 -f "geth.*--datadir.*$EXECUTION_ROOT/data"
         echo "Geth RPC stopped."
         ;;
     "status")
-        if pgrep -f "geth.*--datadir.*$EXECUTION_ROOT/data.*rpc" > /dev/null; then
+        if pgrep -f "geth.*--datadir.*$EXECUTION_ROOT/data" > /dev/null; then
             echo "Geth RPC is running."
-            ps aux | grep "geth.*--datadir.*$EXECUTION_ROOT/data.*rpc" | grep -v grep # 실행 중인 Geth RPC 프로세스 상세 출력
+            ps aux | grep "geth.*--datadir.*$EXECUTION_ROOT/data" | grep -v grep
         else
             echo "Geth RPC is not running."
         fi
         ;;
     "clean")
         echo "Clear go-ethereum RPC DB & Genesis -- 🗑️"
-        pkill -f "geth.*--datadir.*$EXECUTION_ROOT/data.*rpc" 2>/dev/null
+        pkill -f "geth.*--datadir.*$EXECUTION_ROOT/data" 2>/dev/null
         rm -rf $EXECUTION_ROOT/data/geth # Geth 데이터 디렉토리 삭제
         echo "Cleaned RPC blockchain data."
         ;;

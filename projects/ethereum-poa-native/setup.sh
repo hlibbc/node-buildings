@@ -69,8 +69,8 @@ case "$1" in
         < /dev/urandom LC_CTYPE=C tr -dc 'A-Za-z0-9' | head -c 16 > $CONFIG_DIR/password.txt
         # 해당 비밀번호로 계정을 생성하고, 생성된 주소를 파싱하여 변수에 저장
         _MINER_ADDRESS=`$GETH_BIN account new --datadir $EXECUTION_ROOT/data --password $PASSWORD_ROOT  | grep "Public address of the key:" | awk '{print $6}' | tr -d '{}'`
-        # .env 파일에서 기존 MINER_ADDRESS 값을 새로 생성한 값으로 치환
-        sed "s|^MINER_ADDRESS=.*|MINER_ADDRESS=$_MINER_ADDRESS|" .env > .env.tmp && mv .env.tmp .env
+        # 지정된 env 파일에서 기존 MINER_ADDRESS 값을 새로 생성한 값으로 치환 (--env= 옵션 반영)
+        sed "s|^MINER_ADDRESS=.*|MINER_ADDRESS=$_MINER_ADDRESS|" "$env_file" > "$env_file.tmp" && mv "$env_file.tmp" "$env_file"
         # extradata 생성: 마이너 주소를 기반으로 node generate-extradata.js 실행
         EXTRA_DATA=`export MINER_ADDRESS=$_MINER_ADDRESS; node generate-extradata.js`
         # genesis.json 파일의 extradata 필드 업데이트
@@ -78,8 +78,11 @@ case "$1" in
         ;;
     "init")
         echo "Run go-ethereum init genesis block -- 🚀"
-        # 지정된 genesis.json을 사용하여 블록체인 초기화
-        $GETH_BIN --datadir $EXECUTION_ROOT/data init $ROOT_DIR/genesis/genesis.json
+        # .env의 CHAIN_ID를 genesis config.chainId에 주입하여 초기화 (고정 파일 사용 금지)
+        _GENESIS_TMP="$(mktemp /tmp/genesis.XXXXXX.json)"
+        jq --argjson chainId "$CHAIN_ID" '.config.chainId = $chainId' $ROOT_DIR/genesis/genesis.json > "$_GENESIS_TMP"
+        $GETH_BIN --datadir $EXECUTION_ROOT/data init "$_GENESIS_TMP"
+        rm -f "$_GENESIS_TMP"
         ;;
     "run-consensus")
         echo "Run Execution Layer go-ethereum Node -- 🚀"
@@ -91,27 +94,30 @@ case "$1" in
             sleep 2
         fi
         
-        ### 백그라운드에서 geth 실행 (--authrpc.jwtsecret에 의해 jwtsecret 파일은 geth가 처음 실행될 때 자동으로 생성)
+        # STATIC_PEER_ENODE가 설정된 경우 static-nodes.json 생성 (--nodiscover 환경에서 peer 연결)
+        if [ -n "$STATIC_PEER_ENODE" ]; then
+            mkdir -p $EXECUTION_ROOT/data/geth
+            jq -n --arg e "$STATIC_PEER_ENODE" '[$e]' > $EXECUTION_ROOT/data/geth/static-nodes.json
+        fi
+        _NETWORK_ID=${NETWORK_ID:-$CHAIN_ID}
+
+        ### consensus 전용: 외부 공개 금지 (HTTP/WS는 127.0.0.1), authrpc 불필요 (Clique PoA는 Engine API 미사용)
         nohup $GETH_BIN \
             --datadir $EXECUTION_ROOT/data \
             --syncmode=full \
-            --networkid=$CHAIN_ID \
+            --networkid=$_NETWORK_ID \
             --port=$GETH_PORT \
             --http \
             --http.api=eth,net,txpool \
-            --http.addr=0.0.0.0 \
+            --http.addr=${CONSENSUS_HTTP_ADDR:-127.0.0.1} \
             --http.port=$GETH_HTTP_PORT \
             --http.corsdomain=* \
             --http.vhosts=* \
             --ws \
             --ws.api=eth,net,web3 \
-            --ws.addr=0.0.0.0 \
+            --ws.addr=${CONSENSUS_HTTP_ADDR:-127.0.0.1} \
             --ws.port=$GETH_WS_PORT \
             --ws.origins=* \
-            --authrpc.vhosts=* \
-            --authrpc.addr=0.0.0.0 \
-            --authrpc.port=$GETH_AUTH_RPC_PORT \
-            --authrpc.jwtsecret=$CONFIG_DIR/jwtsecret \
             --mine \
             --miner.etherbase=$MINER_ADDRESS \
             --unlock=$MINER_ADDRESS \
@@ -119,24 +125,31 @@ case "$1" in
             --password=$PASSWORD_ROOT \
             --nodiscover \
             > geth.log 2>&1 &
-        
+
         echo "Geth started in background (consensus). Check geth.log for logs."
         ;;
     "run-rpc")
         echo "Run go-ethereum RPC Node (Sync Only) -- 🚀"
         
-        # 기존 프로세스가 실행 중인지 확인
-        if pgrep -f "geth.*--datadir.*$EXECUTION_ROOT/data.*rpc" > /dev/null; then
+        # 기존 프로세스가 실행 중인지 확인 (.*rpc 패턴 제거: 실제 cmdline에 "rpc" 문자열 없음)
+        if pgrep -f "geth.*--datadir.*$EXECUTION_ROOT/data" > /dev/null; then
             echo "Geth RPC is already running. Stopping first..."
-            pkill -2 -f "geth.*--datadir.*$EXECUTION_ROOT/data.*rpc" # 실행 중이면 먼저 프로세스 kill (SIGINT) 
+            pkill -2 -f "geth.*--datadir.*$EXECUTION_ROOT/data"
             sleep 2
         fi
-        
-        ### 백그라운드에서 geth 실행 (RPC 노드 - 블록 생성 없이 동기화만)
+
+        # STATIC_PEER_ENODE가 설정된 경우 static-nodes.json 생성
+        if [ -n "$STATIC_PEER_ENODE" ]; then
+            mkdir -p $EXECUTION_ROOT/data/geth
+            jq -n --arg e "$STATIC_PEER_ENODE" '[$e]' > $EXECUTION_ROOT/data/geth/static-nodes.json
+        fi
+        _NETWORK_ID=${NETWORK_ID:-$CHAIN_ID}
+
+        ### rpc 전용: non-signer, personal/debug/miner/allow-insecure-unlock 제외, authrpc 불필요
         nohup $GETH_BIN \
             --datadir $EXECUTION_ROOT/data \
             --syncmode=full \
-            --networkid=$CHAIN_ID \
+            --networkid=$_NETWORK_ID \
             --port=$GETH_PORT \
             --http \
             --http.api=eth,net,txpool \
@@ -149,13 +162,9 @@ case "$1" in
             --ws.addr=0.0.0.0 \
             --ws.port=$GETH_WS_PORT \
             --ws.origins=* \
-            --authrpc.vhosts=* \
-            --authrpc.addr=0.0.0.0 \
-            --authrpc.port=$GETH_AUTH_RPC_PORT \
-            --authrpc.jwtsecret=$CONFIG_DIR/jwtsecret \
             --nodiscover \
             > geth-rpc.log 2>&1 &
-        
+
         echo "Geth RPC Node started in background (rpc only). Check geth-rpc.log for logs."
         ;;
     "attach"|"a")

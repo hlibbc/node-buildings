@@ -13,3 +13,5 @@ projects/ethereum-poa-native/config/
 projects/ethereum-poa-native/poa/
 projects/ethereum-poa-native/backup/
 projects/ethereum-poa-native/geth.log
+
+.DS_Store
