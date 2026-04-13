@@ -17,23 +17,42 @@ rpc 노드 HTTP RPC 기준. `<rpc-ip>`, `<port>` 는 rpc.env의 값으로 대체
 
 ## 포트 리슨 확인
 
+consensus 인스턴스에서:
+
 ```bash
 # Linux
-ss -tlnp | grep <GETH_HTTP_PORT>
-
+ss -tlnp | grep <consensus GETH_HTTP_PORT>
 # macOS
-netstat -an | grep <GETH_HTTP_PORT>
+netstat -an | grep <consensus GETH_HTTP_PORT>
 ```
 
-- consensus: `127.0.0.1:<GETH_HTTP_PORT>` 리슨 (외부 노출 없음)
-- rpc: `0.0.0.0:<GETH_HTTP_PORT>` 리슨
+- 기대값: `127.0.0.1:<port>` — 외부 미노출
+
+rpc 인스턴스에서:
+
+```bash
+# Linux
+ss -tlnp | grep <rpc GETH_HTTP_PORT>
+# macOS
+netstat -an | grep <rpc GETH_HTTP_PORT>
+```
+
+- 기대값: `0.0.0.0:<port>` — 외부 접근 가능
 
 ---
 
 ## RPC 접속
 
+rpc 인스턴스에 대해 외부에서 접속:
+
 ```bash
+# geth attach
 ./geth/v1.13.15/geth attach http://<rpc-ip>:<GETH_HTTP_PORT>
+
+# curl (간단 확인)
+curl -s -X POST http://<rpc-ip>:<GETH_HTTP_PORT> \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}'
 ```
 
 ---
@@ -71,12 +90,16 @@ net.peerCount
 
 ## 로그 확인
 
-```bash
-# consensus
-tail -f geth.log | grep -E "mined|sealed|commit|peer"
+consensus 인스턴스에서:
 
-# rpc
-tail -f geth-rpc.log | grep -E "imported|peer|synced"
+```bash
+tail -f geth.log | grep --line-buffered -E "mined|sealed|commit|peer"
+```
+
+rpc 인스턴스에서:
+
+```bash
+tail -f geth-rpc.log | grep --line-buffered -E "imported|peer|synced"
 ```
 
 - consensus: `Successfully sealed new block` 또는 `mined potential block` 출력 확인

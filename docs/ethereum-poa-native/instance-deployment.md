@@ -6,7 +6,7 @@ geth 1.13.15 Clique PoA 테스트망을 두 인스턴스(consensus / rpc)에 구
 
 ## 사전 준비
 
-- 인스턴스 2개 (consensus, rpc) — 단일 머신 테스트도 가능 (포트 분리 필요)
+- consensus 인스턴스 1대 + rpc 인스턴스 1대
 - 각 인스턴스에 `jq`, `node` 설치
 - geth 바이너리는 레포에 포함: `projects/ethereum-poa-native/geth/v1.13.15/geth`
 
@@ -27,16 +27,16 @@ cd node-buildings/projects/ethereum-poa-native
 cp .env_sample consensus.env
 ```
 
-최소 설정값:
+최소 설정값 (레포 루트 기준 상대경로, sudo 불필요):
 
 ```dotenv
 CHAIN_ID=12345
 NETWORK_ID=                        # 비워두면 CHAIN_ID 사용
 
-CONFIG_DIR=/opt/eth/consensus/config
-BACKUP_DIR=/opt/eth/consensus/backup
-EXECUTION_ROOT=/opt/eth/consensus
-PASSWORD_ROOT=/opt/eth/consensus/config/password.txt
+CONFIG_DIR=./var/consensus/config
+BACKUP_DIR=./var/consensus/backup
+EXECUTION_ROOT=./var/consensus
+PASSWORD_ROOT=./var/consensus/config/password.txt
 
 GETH_PORT=30303
 GETH_HTTP_PORT=8545
@@ -45,6 +45,8 @@ GETH_WS_PORT=8546
 CONSENSUS_HTTP_ADDR=127.0.0.1      # 외부 공개 금지
 MINER_ADDRESS=                     # generate 실행 후 자동 기록됨
 ```
+
+> 운영 환경에서는 `/opt/eth/consensus/...` 등 절대경로로 변경.
 
 ---
 
@@ -91,10 +93,10 @@ IPC로 접속:
 
 ```javascript
 admin.nodeInfo.enode
-// "enode://<pubkey>@127.0.0.1:30303"
+// "enode://<pubkey>@<consensus-ip>:30303"
 ```
 
-> **중요:** `127.0.0.1` 부분을 consensus 인스턴스의 실제 IP로 교체해서 rpc env에 입력
+> 출력된 enode의 IP가 `127.0.0.1` 이면 consensus 인스턴스의 실제 IP로 교체한다. 이 값을 그대로 `STATIC_PEER_ENODE` 에 입력.
 
 ---
 
@@ -104,23 +106,25 @@ admin.nodeInfo.enode
 cp .env_sample rpc.env
 ```
 
-최소 설정값:
+최소 설정값 (레포 루트 기준 상대경로, sudo 불필요):
 
 ```dotenv
 CHAIN_ID=12345                     # consensus 와 동일
 NETWORK_ID=                        # 비워두면 CHAIN_ID 사용
 
-CONFIG_DIR=/opt/eth/rpc/config
-BACKUP_DIR=/opt/eth/rpc/backup
-EXECUTION_ROOT=/opt/eth/rpc        # consensus 와 다른 경로
-PASSWORD_ROOT=/opt/eth/rpc/config/password.txt
+CONFIG_DIR=./var/rpc/config
+BACKUP_DIR=./var/rpc/backup
+EXECUTION_ROOT=./var/rpc
 
-GETH_PORT=30304                    # consensus 와 다른 포트 (단일 머신 시)
-GETH_HTTP_PORT=8645
-GETH_WS_PORT=8646
+GETH_PORT=30303
+GETH_HTTP_PORT=8545
+GETH_WS_PORT=8546
 
+# 6단계에서 확인한 enode URL (IP를 consensus 실제 IP로 교체한 값)
 STATIC_PEER_ENODE=enode://<pubkey>@<consensus-ip>:30303
 ```
+
+> `PASSWORD_ROOT` 는 rpc 노드에서 사용하지 않으므로 생략.
 
 ---
 
