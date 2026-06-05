@@ -1,0 +1,10 @@
+{
+  "_comment": "Prefunded accounts. cp prefund.json.example prefund.json 후 편집.",
+  "accounts": [
+    {
+      "_label": "Arbitrum L2 deployer — 실제 주소로 교체 필요",
+      "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "balance": "0x200000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

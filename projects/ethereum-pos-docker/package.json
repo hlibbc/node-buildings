@@ -1,0 +1,20 @@
+{
+  "name": "ethereum-pos-docker",
+  "version": "0.1.0",
+  "description": "Ethereum PoS private devnet — Geth + Prysm Docker Compose 2-node",
+  "scripts": {
+    "check":          "./scripts/check-requirements.sh",
+    "generate":       "./scripts/00-generate-config.sh",
+    "init":           "./scripts/01-init-geth.sh",
+    "start":          "./scripts/02-start.sh",
+    "stop":           "./scripts/03-stop.sh",
+    "status":         "./scripts/04-status.sh",
+    "peer:info":      "./scripts/05-peer-info.sh",
+    "peer:connect":   "./scripts/06-peer-connect.sh",
+    "verify":         "./scripts/07-verify.sh",
+    "clean":          "./scripts/08-clean.sh"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

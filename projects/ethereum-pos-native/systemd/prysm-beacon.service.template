@@ -1,0 +1,40 @@
+# prysm-beacon.service.template
+# 설치: 04-install-systemd-services.sh
+# 생성 파일: /etc/systemd/system/eth-pos-beacon-%NODE_NAME%.service
+# %NODE_NAME% 은 설치 스크립트가 실제 NODE_NAME으로 치환
+#
+# 런타임 변수: /etc/ethereum-pos-native/%NODE_NAME%.env 에서 로드
+# ExecStart: beacon-pos-wrapper가 STATIC_ENRS 유무에 따라 --bootstrap-node 조건부 추가
+#
+# 보안:
+# - gRPC (BEACON_GRPC_PORT=4000): 127.0.0.1 바인딩, validator 전용
+# - REST API (BEACON_REST_PORT=3500): BEACON_REST_ADDR 제어 (기본 0.0.0.0)
+# - force-clear-db: beacon-wrapper에 포함하지 않음 (데이터 보존)
+#
+# 로그 확인:
+#   journalctl -u eth-pos-beacon-%NODE_NAME% -f
+#   journalctl -u eth-pos-beacon-%NODE_NAME% --no-pager -n 50
+
+[Unit]
+Description=Prysm Beacon Chain (%NODE_NAME%)
+Documentation=https://docs.prylabs.network
+After=network-online.target eth-pos-geth-%NODE_NAME%.service
+Wants=network-online.target
+Requires=eth-pos-geth-%NODE_NAME%.service
+
+[Service]
+Type=simple
+User=ethereum
+Group=ethereum
+
+EnvironmentFile=/etc/ethereum-pos-native/%NODE_NAME%.env
+
+ExecStart=/usr/local/bin/beacon-pos-wrapper
+
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=120s
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

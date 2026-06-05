@@ -1,0 +1,34 @@
+# geth.service.template
+# 설치: 04-install-systemd-services.sh
+# 생성 파일: /etc/systemd/system/eth-pos-geth-%NODE_NAME%.service
+# %NODE_NAME% 은 설치 스크립트가 실제 NODE_NAME으로 치환
+#
+# 런타임 변수: /etc/ethereum-pos-native/%NODE_NAME%.env 에서 로드
+# ExecStart: geth-pos-wrapper가 STATIC_BOOTNODES 유무에 따라 --bootnodes 조건부 추가
+#
+# 로그 확인:
+#   journalctl -u eth-pos-geth-%NODE_NAME% -f
+#   journalctl -u eth-pos-geth-%NODE_NAME% --no-pager -n 50
+
+[Unit]
+Description=Geth Execution Client (%NODE_NAME%)
+Documentation=https://geth.ethereum.org
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ethereum
+Group=ethereum
+
+EnvironmentFile=/etc/ethereum-pos-native/%NODE_NAME%.env
+
+ExecStart=/usr/local/bin/geth-pos-wrapper
+
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=120s
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

@@ -14,4 +14,17 @@ projects/ethereum-poa-native/poa/
 projects/ethereum-poa-native/backup/
 projects/ethereum-poa-native/geth.log
 
+# ethereum-pos-docker: pnpm run generate 실행 시 생성되는 runtime config
+projects/ethereum-pos-docker/config/genesis.json
+projects/ethereum-pos-docker/config/genesis.ssz
+projects/ethereum-pos-docker/config/config.yml
+projects/ethereum-pos-docker/config/jwtsecret
+projects/ethereum-pos-docker/.env
+
+# macOS 메타데이터
 .DS_Store
+**/.DS_Store
+._*
+**/._*
+# TASK
+TASK.md

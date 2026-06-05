@@ -1,0 +1,13 @@
+# versions.lock — Docker image 버전 고정
+#
+# 규칙:
+#   - latest / stable 태그 금지
+#   - 버전 변경 시 .env.sample / versions.lock / docs 동시 갱신
+#   - 변경 후 반드시 아래 검증 수행:
+#       docker compose config          (compose 파일 유효성)
+#       pnpm run verify -- --allow-waiting  (finality 검증)
+#
+# 참조: .env.sample 의 GETH_VERSION, PRYSM_VERSION 과 동일하게 유지
+
+GETH_VERSION=v1.14.12
+PRYSM_VERSION=v5.3.2
