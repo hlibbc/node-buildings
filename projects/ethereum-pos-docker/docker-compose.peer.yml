@@ -1,0 +1,68 @@
+# docker-compose.peer.yml — peer:connect 이후 bootstrap-node 포함 beacon 재생성용 override
+#
+# 사용 목적:
+#   pnpm run peer:connect 내부에서 beacon-node0/1을 --bootstrap-node 포함 상태로 재생성
+#   BEACON_NODE0_ENR / BEACON_NODE1_ENR 이 .env 에 기록된 뒤에만 사용
+#
+# 직접 사용:
+#   docker compose -f docker-compose.yml -f docker-compose.peer.yml \
+#     --env-file .env up -d --force-recreate --no-deps beacon-node0 beacon-node1
+#
+# 주의:
+#   최초 start(pnpm run start) 시에는 이 파일을 사용하지 마세요.
+#   ENR이 없는 상태에서 :? 검사를 통과하지 못합니다.
+
+services:
+  beacon-node0:
+    command:
+      - --datadir=/data
+      - --genesis-state=/config/genesis.ssz
+      - --chain-config-file=/config/config.yml
+      - --interop-eth1data-votes
+      - --contract-deployment-block=0
+      - --chain-id=${CHAIN_ID:-1111}
+      - --execution-endpoint=http://geth-node0:8551
+      - --jwt-secret=/config/jwtsecret
+      - --accept-terms-of-use
+      - --rpc-host=0.0.0.0
+      - --rpc-port=4000
+      - --grpc-gateway-host=0.0.0.0
+      - --grpc-gateway-port=3500
+      - --p2p-tcp-port=13000
+      - --p2p-udp-port=12000
+      - --p2p-static-id
+      - --p2p-host-ip=172.25.0.10
+      - --minimum-peers-per-subnet=0
+      - --min-sync-peers=0
+      - --suggested-fee-recipient=${FEE_RECIPIENT:-0x0000000000000000000000000000000000000000}
+      - --bootstrap-node=${BEACON_NODE1_ENR:?BEACON_NODE1_ENR is required — run pnpm run peer:connect first}
+    networks:
+      pos-net:
+        ipv4_address: 172.25.0.10
+
+  beacon-node1:
+    command:
+      - --datadir=/data
+      - --genesis-state=/config/genesis.ssz
+      - --chain-config-file=/config/config.yml
+      - --interop-eth1data-votes
+      - --contract-deployment-block=0
+      - --chain-id=${CHAIN_ID:-1111}
+      - --execution-endpoint=http://geth-node1:8551
+      - --jwt-secret=/config/jwtsecret
+      - --accept-terms-of-use
+      - --rpc-host=0.0.0.0
+      - --rpc-port=4000
+      - --grpc-gateway-host=0.0.0.0
+      - --grpc-gateway-port=3500
+      - --p2p-tcp-port=13000
+      - --p2p-udp-port=12000
+      - --p2p-static-id
+      - --p2p-host-ip=172.25.0.11
+      - --minimum-peers-per-subnet=0
+      - --min-sync-peers=0
+      - --suggested-fee-recipient=${FEE_RECIPIENT:-0x0000000000000000000000000000000000000000}
+      - --bootstrap-node=${BEACON_NODE0_ENR:?BEACON_NODE0_ENR is required — run pnpm run peer:connect first}
+    networks:
+      pos-net:
+        ipv4_address: 172.25.0.11

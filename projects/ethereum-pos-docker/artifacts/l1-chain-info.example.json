@@ -1,0 +1,64 @@
+{
+    "chainId": 1111,
+    "networkId": 1111,
+    "executionRpc": {
+        "node0": "http://localhost:8545",
+        "node1": "http://localhost:8645"
+    },
+    "beaconRest": {
+        "node0": "http://localhost:3500",
+        "node1": "http://localhost:3600"
+    },
+    "depositContractAddress": "0x4242424242424242424242424242424242424242",
+    "feeRecipient": "0x2222222222222222222222222222222222222222",
+    "geth": {
+        "node0": {
+            "blockNumber": "0xa5",
+            "peerCount": 1
+        },
+        "node1": {
+            "blockNumber": "0xa5",
+            "peerCount": 1
+        }
+    },
+    "beacon": {
+        "node0": {
+            "headSlot": "168",
+            "syncDistance": "0",
+            "elOffline": false,
+            "peerCount": 1,
+            "finalizedEpoch": "3",
+            "finalizedRoot": "0x4634055b204e03559e61145c8a43a4a9551881b4c71a14a6d4e4721cf37b6317"
+        },
+        "node1": {
+            "headSlot": "168",
+            "syncDistance": "0",
+            "elOffline": false,
+            "peerCount": 1,
+            "finalizedEpoch": "3",
+            "finalizedRoot": "0x4634055b204e03559e61145c8a43a4a9551881b4c71a14a6d4e4721cf37b6317"
+        }
+    },
+    "validators": {
+        "node0Validator0": "active_ongoing",
+        "node1Validator32": "active_ongoing"
+    },
+    "prefundedAccounts": [
+        {
+            "name": "l1-deployer",
+            "address": "0x1111111111111111111111111111111111111111",
+            "balanceEth": "10000"
+        },
+        {
+            "name": "l1-fee-recipient",
+            "address": "0x2222222222222222222222222222222222222222",
+            "balanceEth": "10000"
+        },
+        {
+            "name": "l2-deployer",
+            "address": "0x3333333333333333333333333333333333333333",
+            "balanceEth": "10000"
+        }
+    ],
+    "generatedAt": "2026-06-08T02:00:00Z"
+}

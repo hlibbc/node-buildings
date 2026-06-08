@@ -1,0 +1,56 @@
+# prysm-validator.service.template
+# 설치: 04-install-systemd-services.sh
+# 생성 파일: /etc/systemd/system/eth-pos-validator-%NODE_NAME%.service
+# %NODE_NAME% 은 설치 스크립트가 실제 NODE_NAME으로 치환
+#
+# 런타임 변수: /etc/ethereum-pos-native/%NODE_NAME%.env 에서 로드
+#
+# validator index 분리:
+#   node0: VALIDATOR_START_INDEX=0,  VALIDATOR_COUNT=32  → keys 0~31
+#   node1: VALIDATOR_START_INDEX=32, VALIDATOR_COUNT=32  → keys 32~63
+#
+# 중요: 같은 validator key를 두 노드에서 동시에 실행하면 slashing 발생
+#       interop 모드: index 기반 결정론적 BLS 키 자동 생성
+#
+# 보안:
+# - gRPC (7000): 127.0.0.1 바인딩
+# - gRPC gateway (7500): 127.0.0.1 바인딩, 외부 공개 금지
+# - force-clear-db: 포함하지 않음 (데이터 보존)
+#
+# 로그 확인:
+#   journalctl -u eth-pos-validator-%NODE_NAME% -f
+#   journalctl -u eth-pos-validator-%NODE_NAME% --no-pager -n 50
+
+[Unit]
+Description=Prysm Validator (%NODE_NAME%)
+Documentation=https://docs.prylabs.network
+After=network-online.target eth-pos-beacon-%NODE_NAME%.service
+Wants=network-online.target
+Requires=eth-pos-beacon-%NODE_NAME%.service
+
+[Service]
+Type=simple
+User=ethereum
+Group=ethereum
+
+EnvironmentFile=/etc/ethereum-pos-native/%NODE_NAME%.env
+
+ExecStart=/usr/local/bin/validator \
+  --datadir=${VALIDATOR_ROOT} \
+  --chain-config-file=${CONFIG_ROOT}/config.yml \
+  --beacon-rpc-provider=127.0.0.1:${BEACON_GRPC_PORT} \
+  --accept-terms-of-use \
+  --interop-start-index=${VALIDATOR_START_INDEX} \
+  --interop-num-validators=${VALIDATOR_COUNT} \
+  --suggested-fee-recipient=${FEE_RECIPIENT} \
+  --rpc-host=127.0.0.1 \
+  --rpc-port=7000 \
+  --grpc-gateway-host=127.0.0.1 \
+  --grpc-gateway-port=7500
+
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=60s
+
+[Install]
+WantedBy=multi-user.target

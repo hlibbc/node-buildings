@@ -1,0 +1,46 @@
+# Ethereum PoS beacon chain config — private devnet
+# 이 파일은 예제입니다. 실제 파일은 02-generate-network-config.sh가 /etc/ethereum-pos-native/config.yml 에 생성합니다.
+# 각 값은 .env 파일의 변수에서 생성됩니다.
+#
+# 참고: PRESET_BASE: mainnet 이므로 명시하지 않은 값은 mainnet preset에서 가져옵니다.
+
+CONFIG_NAME: eth-pos-devnet
+PRESET_BASE: mainnet
+
+# The merge: PoS from genesis (terminalTotalDifficulty=0)
+TERMINAL_TOTAL_DIFFICULTY: 0
+TERMINAL_BLOCK_HASH: 0x0000000000000000000000000000000000000000000000000000000000000000
+TERMINAL_BLOCK_HASH_ACTIVATION_EPOCH: 18446744073709551615
+
+# Genesis
+MIN_GENESIS_ACTIVE_VALIDATOR_COUNT: 64
+MIN_GENESIS_TIME: 0
+# GENESIS_DELAY: prysmctl이 --genesis-time-delay로 설정
+GENESIS_FORK_VERSION: 0x20000089
+GENESIS_DELAY: 15
+
+# Fork versions — mainnet/testnet과 충돌하지 않는 private devnet 전용 값
+# 모든 fork epoch을 0으로 설정하여 genesis부터 Deneb 활성화
+ALTAIR_FORK_VERSION: 0x20000090
+ALTAIR_FORK_EPOCH: 0
+
+BELLATRIX_FORK_VERSION: 0x20000091
+BELLATRIX_FORK_EPOCH: 0
+
+CAPELLA_FORK_VERSION: 0x20000092
+CAPELLA_FORK_EPOCH: 0
+
+DENEB_FORK_VERSION: 0x20000093
+DENEB_FORK_EPOCH: 0
+
+# Time parameters
+SECONDS_PER_SLOT: 12
+SLOTS_PER_EPOCH: 32
+SECONDS_PER_ETH1_BLOCK: 12
+ETH1_FOLLOW_DISTANCE: 16
+
+# Deposit contract — interop 모드에서는 실제 deposit 불필요
+# beacon chain은 genesis.ssz에 pre-loaded된 interop validators를 사용
+DEPOSIT_CHAIN_ID: 1111
+DEPOSIT_NETWORK_ID: 1111
+DEPOSIT_CONTRACT_ADDRESS: 0x0000000000000000000000000000000000000000

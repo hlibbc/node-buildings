@@ -1,0 +1,362 @@
+# ethereum-pos-docker/docker-compose.yml
+#
+# 2-node Ethereum PoS devnet — Geth + Prysm beacon + Prysm validator
+# Chain ID: ${CHAIN_ID} (기본 1111)
+# Validators: 64개  node0=0~31, node1=32~63
+#
+# 전제: .env 파일이 존재해야 함 (cp .env.sample .env)
+#
+# 초기화 (최초 1회):
+#   pnpm run generate   # genesis.json, config.yml, genesis.ssz, jwtsecret 생성
+#   pnpm run init       # geth chaindata 초기화 (양쪽 노드)
+#
+# 기동:
+#   pnpm run start      # 6개 서비스 기동
+#
+# 보안 정책:
+#   - authrpc (8551): Docker 내부 전용, host에 publish 안 함
+#   - validator API (7000, 7500): Docker 내부 전용, host에 publish 안 함
+#   - HTTP RPC, Beacon REST: 개발용 host publish (포트 변경 가능)
+#   - WebSocket: 기본 비활성 (GETH_WS_ENABLED=true로 활성화)
+#   - latest/stable 이미지 금지 — 반드시 명시 버전 사용
+
+# =====================================================
+# YAML anchors
+# =====================================================
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "500m"
+    max-file: "3"
+
+x-geth-base: &geth-base
+  image: ethereum/client-go:${GETH_VERSION:?GETH_VERSION is not set in .env}
+  restart: unless-stopped
+  logging: *logging
+
+x-beacon-base: &beacon-base
+  image: gcr.io/prysmaticlabs/prysm/beacon-chain:${PRYSM_VERSION:?PRYSM_VERSION is not set in .env}
+  restart: unless-stopped
+  logging: *logging
+
+x-validator-base: &validator-base
+  image: gcr.io/prysmaticlabs/prysm/validator:${PRYSM_VERSION}
+  restart: unless-stopped
+  logging: *logging
+
+
+# =====================================================
+services:
+
+  # ---------------------------------------------------
+  # Init: genesis.ssz 생성 (profile=init, 최초 1회)
+  # ---------------------------------------------------
+  create-genesis:
+    image: gcr.io/prysmaticlabs/prysm/cmd/prysmctl:${PRYSM_VERSION}
+    container_name: pos-create-genesis
+    # genesis.json + config.yml 이 ./config/ 에 이미 있어야 함
+    # (00-generate-config.sh 가 먼저 생성)
+    command:
+      - testnet
+      - generate-genesis
+      - --fork=deneb
+      - --num-validators=${TOTAL_VALIDATORS:-64}
+      - --genesis-time=${GENESIS_TIME:-0}
+      - --output-ssz=/config/genesis.ssz
+      - --chain-config-file=/config/config.yml
+      - --geth-genesis-json-in=/config/genesis.json
+      - --geth-genesis-json-out=/config/genesis.json
+    volumes:
+      - ./config:/config
+    networks:
+      - pos-net
+    profiles: [init]
+
+  # geth init — node0
+  geth-init-node0:
+    <<: *geth-base
+    container_name: pos-geth-init-node0
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Geth init node0..."
+        geth --datadir=/data init /config/genesis.json && echo "node0 init OK"
+    volumes:
+      - geth-node0-data:/data
+      - ./config:/config:ro
+    networks:
+      - pos-net
+    profiles: [init]
+    restart: "no"
+
+  # geth init — node1
+  geth-init-node1:
+    <<: *geth-base
+    container_name: pos-geth-init-node1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Geth init node1..."
+        geth --datadir=/data init /config/genesis.json && echo "node1 init OK"
+    volumes:
+      - geth-node1-data:/data
+      - ./config:/config:ro
+    networks:
+      - pos-net
+    profiles: [init]
+    restart: "no"
+
+
+  # ---------------------------------------------------
+  # node0 — geth
+  # ---------------------------------------------------
+  geth-node0:
+    <<: *geth-base
+    container_name: geth-node0
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        EXTRA=""
+        if [ -n "$$GETH_NODE1_ENODE" ]; then
+          EXTRA="--bootnodes=$$GETH_NODE1_ENODE"
+        fi
+        if [ "$${GETH_WS_ENABLED:-false}" = "true" ]; then
+          EXTRA="$$EXTRA --ws --ws.api=eth,net,web3 --ws.addr=0.0.0.0 --ws.port=8546 --ws.origins=*"
+        fi
+        exec geth \
+          --datadir=/data \
+          --syncmode=full \
+          --networkid=$${NETWORK_ID:-1111} \
+          --port=30303 \
+          --http \
+          --http.api=eth,net,web3,txpool \
+          --http.addr=0.0.0.0 \
+          --http.port=8545 \
+          --http.corsdomain='*' \
+          --http.vhosts='*' \
+          --authrpc.addr=0.0.0.0 \
+          --authrpc.port=8551 \
+          --authrpc.jwtsecret=/config/jwtsecret \
+          --authrpc.vhosts='*' \
+          $$EXTRA
+    environment:
+      GETH_NODE1_ENODE: ${GETH_NODE1_ENODE:-}
+      GETH_WS_ENABLED: ${GETH_WS_ENABLED:-false}
+      NETWORK_ID: ${NETWORK_ID:-1111}
+    ports:
+      - "${NODE0_RPC_PORT:-8545}:8545"
+      - "${NODE0_GETH_P2P_PORT:-30303}:30303"
+      - "${NODE0_GETH_P2P_PORT:-30303}:30303/udp"
+      # authrpc (8551) — host publish 없음: Docker 내부 전용
+    volumes:
+      - geth-node0-data:/data
+      - ./config:/config:ro
+    networks:
+      - pos-net
+
+  # ---------------------------------------------------
+  # node0 — beacon-chain
+  # ---------------------------------------------------
+  beacon-node0:
+    <<: *beacon-base
+    container_name: beacon-node0
+    command:
+      - --datadir=/data
+      - --genesis-state=/config/genesis.ssz
+      - --chain-config-file=/config/config.yml
+      - --interop-eth1data-votes
+      - --contract-deployment-block=0
+      - --chain-id=${CHAIN_ID:-1111}
+      - --execution-endpoint=http://geth-node0:8551
+      - --jwt-secret=/config/jwtsecret
+      - --accept-terms-of-use
+      - --rpc-host=0.0.0.0
+      - --rpc-port=4000
+      - --grpc-gateway-host=0.0.0.0
+      - --grpc-gateway-port=3500
+      - --p2p-tcp-port=13000
+      - --p2p-udp-port=12000
+      - --p2p-static-id
+      - --p2p-host-ip=172.25.0.10
+      - --minimum-peers-per-subnet=0
+      - --min-sync-peers=0
+      - --suggested-fee-recipient=${FEE_RECIPIENT:-0x0000000000000000000000000000000000000000}
+    environment:
+      CHAIN_ID: ${CHAIN_ID:-1111}
+      FEE_RECIPIENT: ${FEE_RECIPIENT:-0x0000000000000000000000000000000000000000}
+    ports:
+      - "${NODE0_BEACON_PORT:-3500}:3500"
+      - "${NODE0_BEACON_P2P_TCP:-13000}:13000"
+      - "${NODE0_BEACON_P2P_UDP:-12000}:12000/udp"
+      # gRPC (4000) — host publish 없음: validator-node0 전용
+    volumes:
+      - beacon-node0-data:/data
+      - ./config:/config:ro
+    depends_on:
+      - geth-node0
+    networks:
+      pos-net:
+        ipv4_address: 172.25.0.10
+
+  # ---------------------------------------------------
+  # node0 — validator (index 0~31)
+  # ---------------------------------------------------
+  validator-node0:
+    <<: *validator-base
+    container_name: validator-node0
+    command:
+      - --datadir=/data
+      - --chain-config-file=/config/config.yml
+      - --beacon-rpc-provider=beacon-node0:4000
+      - --accept-terms-of-use
+      - --interop-start-index=0
+      - --interop-num-validators=32
+      - --suggested-fee-recipient=${FEE_RECIPIENT:-0x0000000000000000000000000000000000000000}
+      - --rpc-host=127.0.0.1
+      - --rpc-port=7000
+      - --grpc-gateway-host=127.0.0.1
+      - --grpc-gateway-port=7500
+      # validator API (7000, 7500) — host publish 없음
+    volumes:
+      - validator-node0-data:/data
+      - ./config:/config:ro
+    depends_on:
+      - beacon-node0
+    networks:
+      - pos-net
+
+
+  # ---------------------------------------------------
+  # node1 — geth
+  # ---------------------------------------------------
+  geth-node1:
+    <<: *geth-base
+    container_name: geth-node1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        EXTRA=""
+        if [ -n "$$GETH_NODE0_ENODE" ]; then
+          EXTRA="--bootnodes=$$GETH_NODE0_ENODE"
+        fi
+        if [ "$${GETH_WS_ENABLED:-false}" = "true" ]; then
+          EXTRA="$$EXTRA --ws --ws.api=eth,net,web3 --ws.addr=0.0.0.0 --ws.port=8546 --ws.origins=*"
+        fi
+        exec geth \
+          --datadir=/data \
+          --syncmode=full \
+          --networkid=$${NETWORK_ID:-1111} \
+          --port=30303 \
+          --http \
+          --http.api=eth,net,web3,txpool \
+          --http.addr=0.0.0.0 \
+          --http.port=8545 \
+          --http.corsdomain='*' \
+          --http.vhosts='*' \
+          --authrpc.addr=0.0.0.0 \
+          --authrpc.port=8551 \
+          --authrpc.jwtsecret=/config/jwtsecret \
+          --authrpc.vhosts='*' \
+          $$EXTRA
+    environment:
+      GETH_NODE0_ENODE: ${GETH_NODE0_ENODE:-}
+      GETH_WS_ENABLED: ${GETH_WS_ENABLED:-false}
+      NETWORK_ID: ${NETWORK_ID:-1111}
+    ports:
+      - "${NODE1_RPC_PORT:-8645}:8545"
+      - "${NODE1_GETH_P2P_PORT:-30304}:30303"
+      - "${NODE1_GETH_P2P_PORT:-30304}:30303/udp"
+      # authrpc (8551) — host publish 없음
+    volumes:
+      - geth-node1-data:/data
+      - ./config:/config:ro
+    networks:
+      - pos-net
+
+  # ---------------------------------------------------
+  # node1 — beacon-chain
+  # ---------------------------------------------------
+  beacon-node1:
+    <<: *beacon-base
+    container_name: beacon-node1
+    command:
+      - --datadir=/data
+      - --genesis-state=/config/genesis.ssz
+      - --chain-config-file=/config/config.yml
+      - --interop-eth1data-votes
+      - --contract-deployment-block=0
+      - --chain-id=${CHAIN_ID:-1111}
+      - --execution-endpoint=http://geth-node1:8551
+      - --jwt-secret=/config/jwtsecret
+      - --accept-terms-of-use
+      - --rpc-host=0.0.0.0
+      - --rpc-port=4000
+      - --grpc-gateway-host=0.0.0.0
+      - --grpc-gateway-port=3500
+      - --p2p-tcp-port=13000
+      - --p2p-udp-port=12000
+      - --p2p-static-id
+      - --p2p-host-ip=172.25.0.11
+      - --minimum-peers-per-subnet=0
+      - --min-sync-peers=0
+      - --suggested-fee-recipient=${FEE_RECIPIENT:-0x0000000000000000000000000000000000000000}
+    environment:
+      CHAIN_ID: ${CHAIN_ID:-1111}
+      FEE_RECIPIENT: ${FEE_RECIPIENT:-0x0000000000000000000000000000000000000000}
+    ports:
+      - "${NODE1_BEACON_PORT:-3600}:3500"
+      - "${NODE1_BEACON_P2P_TCP:-13001}:13000"
+      - "${NODE1_BEACON_P2P_UDP:-12001}:12000/udp"
+      # gRPC (4000) — host publish 없음
+    volumes:
+      - beacon-node1-data:/data
+      - ./config:/config:ro
+    depends_on:
+      - geth-node1
+    networks:
+      pos-net:
+        ipv4_address: 172.25.0.11
+
+  # ---------------------------------------------------
+  # node1 — validator (index 32~63)
+  # ---------------------------------------------------
+  validator-node1:
+    <<: *validator-base
+    container_name: validator-node1
+    command:
+      - --datadir=/data
+      - --chain-config-file=/config/config.yml
+      - --beacon-rpc-provider=beacon-node1:4000
+      - --accept-terms-of-use
+      - --interop-start-index=32
+      - --interop-num-validators=32
+      - --suggested-fee-recipient=${FEE_RECIPIENT:-0x0000000000000000000000000000000000000000}
+      - --rpc-host=127.0.0.1
+      - --rpc-port=7000
+      - --grpc-gateway-host=127.0.0.1
+      - --grpc-gateway-port=7500
+      # validator API (7000, 7500) — host publish 없음
+    volumes:
+      - validator-node1-data:/data
+      - ./config:/config:ro
+    depends_on:
+      - beacon-node1
+    networks:
+      - pos-net
+
+
+# =====================================================
+networks:
+  pos-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/24
+
+volumes:
+  geth-node0-data:
+  beacon-node0-data:
+  validator-node0-data:
+  geth-node1-data:
+  beacon-node1-data:
+  validator-node1-data:

@@ -1,0 +1,29 @@
+# versions.lock — 설치 스크립트 실행 후 자동 기록
+# 직접 편집하지 말 것.
+#
+# 설치 확인:
+#   geth version | head -3
+#   apt-cache policy geth
+#   beacon-chain --version
+#   validator --version
+#   prysmctl --version
+
+# Geth — 공식 apt repository (ppa:ethereum/ethereum)
+# 방식: apt 패키지 서명 검증 (GPG key 8A16544F)
+# GETH_DOWNLOAD_URL / GETH_SHA256 는 apt 방식에서 사용하지 않음
+GETH_VERSION=
+GETH_APT_PACKAGE=
+GETH_APT_SOURCE=ppa:ethereum/ethereum
+GETH_APT_KEY_FINGERPRINT=8A16544F
+
+# Prysm — GitHub release binary (checksums.txt 또는 .sha256 검증)
+# PRYSM_GITHUB_ORG: OffchainLabs (기본) 또는 prysmaticlabs
+# 변경: PRYSM_GITHUB_ORG=prysmaticlabs sudo npm run install:prysm
+PRYSM_GITHUB_ORG=OffchainLabs
+PRYSM_VERSION=
+BEACON_CHAIN_DOWNLOAD_URL=
+VALIDATOR_DOWNLOAD_URL=
+PRYSMCTL_DOWNLOAD_URL=
+BEACON_CHAIN_SHA256=
+VALIDATOR_SHA256=
+PRYSMCTL_SHA256=

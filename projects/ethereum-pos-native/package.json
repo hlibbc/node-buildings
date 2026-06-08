@@ -1,0 +1,23 @@
+{
+  "name": "ethereum-pos-native",
+  "version": "0.1.0",
+  "description": "Ethereum PoS private devnet — Geth + Prysm native 2-node, Arbitrum L2 parent chain 준비용",
+  "scripts": {
+    "check":            "./scripts/common/check-requirements.sh",
+    "install:geth":     "./scripts/native/00-install-geth.sh",
+    "install:prysm":    "./scripts/native/01-install-prysm.sh",
+    "generate":         "./scripts/native/02-generate-network-config.sh",
+    "init":             "./scripts/native/03-init-geth.sh",
+    "install:services": "./scripts/native/04-install-systemd-services.sh",
+    "start":            "./scripts/native/05-start-node.sh",
+    "stop":             "./scripts/native/06-stop-node.sh",
+    "status":           "./scripts/native/07-status-node.sh",
+    "clean":            "./scripts/native/08-clean-node.sh",
+    "verify":           "./scripts/native/09-verify-finality.sh",
+    "verify:restart":   "./scripts/native/10-verify-restart-persistence.sh",
+    "peer:info":        "./scripts/native/11-print-peer-info.sh"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
