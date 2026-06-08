@@ -45,7 +45,7 @@ for NODE_BEACON in "$NODE0_BEACON" "$NODE1_BEACON"; do
     SYNC=$(curl -sf "${NODE_BEACON}/eth/v1/node/syncing" 2>/dev/null || echo "")
     SLOT=$(echo "$SYNC" | jq -r '.data.head_slot // "?"' 2>/dev/null || echo "?")
     SYNC_DIST=$(echo "$SYNC" | jq -r '.data.sync_distance // "?"' 2>/dev/null || echo "?")
-    EL_OFFLINE=$(echo "$SYNC" | jq -r '.data.el_offline // "?"' 2>/dev/null || echo "?")
+    EL_OFFLINE=$(echo "$SYNC" | jq -r 'if .data.el_offline == null then "?" else (.data.el_offline | tostring) end' 2>/dev/null || echo "?")
     PEERS=$(curl -sf "${NODE_BEACON}/eth/v1/node/peers" 2>/dev/null \
         | jq '.data | length' 2>/dev/null || echo "?")
     FIN=$(curl -sf "${NODE_BEACON}/eth/v1/beacon/states/head/finality_checkpoints" 2>/dev/null \

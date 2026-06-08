@@ -12,7 +12,8 @@
     "peer:info":      "./scripts/05-peer-info.sh",
     "peer:connect":   "./scripts/06-peer-connect.sh",
     "verify":         "./scripts/07-verify.sh",
-    "clean":          "./scripts/08-clean.sh"
+    "clean":          "./scripts/08-clean.sh",
+    "export:artifact": "./scripts/09-export-artifact.sh"
   },
   "keywords": [],
   "author": "",

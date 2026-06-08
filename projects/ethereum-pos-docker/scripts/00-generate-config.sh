@@ -58,18 +58,20 @@ GENESIS_FILE="$CONFIG_DIR/genesis.json"
 echo ""
 echo "genesis.json 생성 중..."
 
-ALLOC="{}"
-if [ -f "$PREFUND_FILE" ]; then
-    echo "  prefund 계정 적용: $PREFUND_FILE"
-    ALLOC=$(jq '[.accounts[] | {key: .address, value: {balance: .balance}}] | from_entries' \
-        "$PREFUND_FILE" 2>/dev/null || echo "{}")
-fi
+# deposit contract stub — prysmctl v5.3.2은 DEPOSIT_CONTRACT_ADDRESS에 bytecode를
+# genesis.json alloc에 자동 주입하지 않음. Prysm의 processPastLogs가 eth_getCode=empty
+# 이면 EL을 offline으로 간주하므로, prysmctl 실행 전에 ABI-호환 stub을 주입한다.
+# 바이트코드: get_deposit_root()→bytes32(0), get_deposit_count()→8bytes(0), fallback→32bytes(0)
+DEPOSIT_CONTRACT_ADDR="${DEPOSIT_CONTRACT_ADDRESS:-0x4242424242424242424242424242424242424242}"
+DEPOSIT_CONTRACT_ADDR_BARE="${DEPOSIT_CONTRACT_ADDR#0x}"
+DEPOSIT_CONTRACT_CODE="0x600436106100255760003560e01c8063c5f2892f1461002b578063621fd1301461003257505b60206000f35b5060206000f35b506020600052600860205260606000f3"
 
 jq -n \
     --argjson chainId "${CHAIN_ID:-1111}" \
     --argjson genesisTime "$GENESIS_TIME" \
     --arg genesisTimeHex "$GENESIS_TIME_HEX" \
-    --argjson alloc "$ALLOC" \
+    --arg depositAddr "$DEPOSIT_CONTRACT_ADDR_BARE" \
+    --arg depositCode "$DEPOSIT_CONTRACT_CODE" \
     '{
         config: {
             chainId: $chainId,
@@ -99,9 +101,26 @@ jq -n \
         difficulty: "0x0",
         mixHash: "0x0000000000000000000000000000000000000000000000000000000000000000",
         coinbase: "0x0000000000000000000000000000000000000000",
-        alloc: $alloc
+        alloc: {($depositAddr): {"code": $depositCode, "balance": "0x0"}}
     }' > "$GENESIS_FILE"
 echo "  genesis.json 생성 완료: $GENESIS_FILE"
+echo "  deposit contract stub: $DEPOSIT_CONTRACT_ADDR"
+
+# --- prefund accounts (prysmctl 실행 전 적용) ---
+if [ -f "$PREFUND_FILE" ]; then
+    echo ""
+    echo "prefund 계정 적용 중 ($PREFUND_FILE)..."
+    if ! command -v node >/dev/null 2>&1; then
+        echo "ERROR: Node.js (node) 가 PATH에 없습니다"
+        echo "       prefund 기능에 Node.js가 필요합니다"
+        exit 1
+    fi
+    node "$SCRIPT_DIR/lib/apply-prefund.mjs" \
+        "$GENESIS_FILE" "$PREFUND_FILE" "$DEPOSIT_CONTRACT_ADDR"
+else
+    echo "  INFO: config/prefund.json 없음 — prefund 없이 진행"
+    echo "        (필요 시: cp config/prefund.json.example config/prefund.json 후 주소 편집)"
+fi
 
 # --- config.yml ---
 CONFIG_YML="$CONFIG_DIR/config.yml"
@@ -142,7 +161,7 @@ ETH1_FOLLOW_DISTANCE:   16
 
 DEPOSIT_CHAIN_ID:         ${CHAIN_ID:-1111}
 DEPOSIT_NETWORK_ID:       ${NETWORK_ID:-1111}
-DEPOSIT_CONTRACT_ADDRESS: 0x0000000000000000000000000000000000000000
+DEPOSIT_CONTRACT_ADDRESS: 0x4242424242424242424242424242424242424242
 CONFIGEOF
 echo "  config.yml 생성 완료: $CONFIG_YML"
 

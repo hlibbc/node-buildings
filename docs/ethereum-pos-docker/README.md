@@ -10,6 +10,9 @@ Geth + Prysm Docker Compose 2-node PoS devnet.
 |------|------|
 | [setup.md](./setup.md) | 단계별 구축 절차, 포트 정책, peer 연결 |
 | [differences-from-native.md](./differences-from-native.md) | native 프로젝트와의 차이점 |
+| [deposit-contract.md](./deposit-contract.md) | Ethereum PoS Deposit Contract와 devnet stub이 필요한 이유 |
+| [prefund-accounts.md](./prefund-accounts.md) | genesis 단계에서 테스트/운영 주소에 ETH를 미리 충전하는 방법 |
+| [l1-chain-artifact.md](./l1-chain-artifact.md) | L2/L3 Docker가 참조할 L1 chain-info artifact 설명 |
 
 ---
 

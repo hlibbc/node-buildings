@@ -20,6 +20,10 @@ projects/ethereum-pos-docker/config/genesis.ssz
 projects/ethereum-pos-docker/config/config.yml
 projects/ethereum-pos-docker/config/jwtsecret
 projects/ethereum-pos-docker/.env
+# ethereum-pos-docker: 사용자 설정 — 실제 주소 포함, 커밋 금지
+projects/ethereum-pos-docker/config/prefund.json
+# ethereum-pos-docker: 런타임 artifact — 환경마다 다름, 커밋 금지
+projects/ethereum-pos-docker/artifacts/l1-chain-info.json
 
 # macOS 메타데이터
 .DS_Store
