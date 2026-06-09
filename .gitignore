@@ -32,3 +32,5 @@ projects/ethereum-pos-docker/artifacts/l1-chain-info.json
 **/._*
 # TASK
 TASK.md
+# arbitrum refs
+references/
