@@ -53,9 +53,13 @@ pnpm run export:artifact
   chainId            — EVM 체인 ID (CHAIN_ID, 기본 1111)
   networkId          — EVM 네트워크 ID (NETWORK_ID, 기본 1111)
 
-  executionRpc       — Geth JSON-RPC 엔드포인트
+  executionRpc       — Geth HTTP JSON-RPC 엔드포인트
     node0              http://localhost:8545
     node1              http://localhost:8645
+
+  executionWs        — Geth WebSocket JSON-RPC 엔드포인트
+    node0              ws://localhost:8546
+    node1              ws://localhost:8646
 
   beaconRest         — Prysm Beacon REST 엔드포인트
     node0              http://localhost:3500
@@ -65,6 +69,7 @@ pnpm run export:artifact
                            0x4242424242424242424242424242424242424242
 
   feeRecipient       — block proposal EL 수수료 수령 주소 (.env FEE_RECIPIENT)
+                       private key는 artifact에 포함하지 않음
 
   geth               — 수집 시점의 Geth 상태
     node{0,1}
@@ -84,8 +89,10 @@ pnpm run export:artifact
     node0Validator0    validator[0] 상태 (active_ongoing = 정상)
     node1Validator32   validator[32] 상태
 
-  prefundedAccounts  — prefund된 계정 목록 (config/prefund.json 기반)
-    [{name, address, balanceEth}]
+  prefundedAccounts  — L1 genesis에서 ETH를 받은 L2/L3 bootstrap depositor 계정
+                       .env의 L2_DEPOSITOR_ADDRESS에서 수집, 실제 on-chain 잔액 기록
+    [{address, roles: ["l2Depositor"], balanceEth, source: "genesis"}]
+    ※ private key는 절대 포함하지 않음
 
   generatedAt        — 생성 시각 (ISO-8601 UTC)
 }
@@ -93,7 +100,77 @@ pnpm run export:artifact
 
 ---
 
-## 4. 시스템 컨트랙트 주소에 대해
+## 4. prefundedAccounts — L2 depositor 설정
+
+### 설계 원칙
+
+L1은 L2 내부 역할별 주소(deployer, sequencer, batch poster 등)를 알지 않습니다.  
+L1은 **L2 bootstrap depositor** 주소 하나만 genesis에서 prefund합니다.
+
+```
+L1 genesis → L2_DEPOSITOR_ADDRESS 에 L1 ETH 충전
+     ↓
+L2 deployment 프로젝트 → 이 계정으로 L1→L2 ETH deposit 실행
+     ↓
+L2 내부 → depositor가 deployer, sequencer, batch poster, validator 등에 L2 ETH 분배
+```
+
+이 구조는 L2→L3 bootstrap에도 동일하게 적용할 수 있습니다.
+
+### .env 변수
+
+| 변수 | 의미 | 기본값 |
+|------|------|--------|
+| `L2_DEPOSITOR_ADDRESS` | L1 genesis에서 ETH를 받을 depositor 주소 | (필수, 빈 값이면 스킵) |
+| `L2_DEPOSITOR_PREFUND_BALANCE_ETH` | genesis에서 지급할 L1 ETH 수량 | `1000000000` |
+
+### 규칙
+
+- **public address만 입력** — `L2_DEPOSITOR_ADDRESS`는 공개 주소만 설정
+- **private key는 L1 프로젝트에 저장하지 않음** — private key는 L2/L3 프로젝트의 `.env` 또는 secrets 파일에서 관리
+- **genesis 적용 시점** — `pnpm run generate` 실행 시 genesis.json alloc에 삽입됨
+
+> **중요:** Prefund addresses are applied at genesis generation time.  
+> Changing `L2_DEPOSITOR_ADDRESS` or `L2_DEPOSITOR_PREFUND_BALANCE_ETH` after the chain has already been initialized does not update existing chain state.  
+> To apply changed prefund settings, rebuild the L1 devnet from a clean state.
+
+```bash
+cd projects/ethereum-pos-docker
+# .env에서 L2_DEPOSITOR_ADDRESS 설정 후:
+pnpm run stop
+pnpm run clean
+pnpm run generate
+pnpm run init
+pnpm run start
+pnpm run peer:connect
+# finality 이후
+pnpm run verify
+pnpm run export:artifact
+cat artifacts/l1-chain-info.json | jq '.prefundedAccounts'
+```
+
+---
+
+## 5. L2/L3 parent chain 연결 시 주의사항
+
+> **중요:** `l1-chain-info.json`의 endpoint는 artifact를 생성한 머신 기준 `localhost` 값이다.  
+> 다른 인스턴스의 L2/L3에서 사용할 때는 해당 L1 머신에 접근 가능한 host/IP 기준으로 변환하거나,  
+> L2 프로젝트의 `.env` override를 사용해야 한다.
+
+### endpoint 선택 가이드
+
+| 용도 | 권장 endpoint |
+|------|--------------|
+| L2 HTTP 연결 (기본) | `executionRpc.node0` |
+| L2 WebSocket 연결 (구독, event polling) | `executionWs.node0` |
+| Beacon 상태 조회 | `beaconRest.node0` |
+
+- Nitro 계열 parent chain 연결에서는 `executionRpc` 또는 `executionWs` 중 하나를 사용합니다.
+- L1/L2/L3가 서로 다른 인스턴스에서 동작할 경우, `localhost`를 L2 인스턴스에서 접근 가능한 IP/DNS로 변환해야 합니다.
+
+---
+
+## 6. 시스템 컨트랙트 주소에 대해
 
 L2/L3 배포 시 필요한 시스템 컨트랙트 주소(RollupCore, Bridge, Inbox, Outbox 등)는  
 이 artifact에 포함되지 않습니다.
@@ -108,7 +185,7 @@ L1 artifact에 강제로 포함하지 않습니다.
 
 ---
 
-## 5. 성공 기준
+## 7. 성공 기준
 
 ```bash
 pnpm run export:artifact
@@ -125,11 +202,11 @@ pnpm run export:artifact
 ```
 
 - `finalizedEpoch` > 0 이면 finality 달성 확인
-- `prefundedAccounts`가 0 이면 `config/prefund.json`이 없는 것 (정상 동작, 단 L2 기동 전에 설정 권장)
+- `prefundedAccounts`가 비어 있으면 `.env`에 `L2_*_ADDRESS`가 설정되지 않은 것 (parent L1 용도라면 설정 권장)
 
 ---
 
-## 6. gitignore 정책
+## 8. gitignore 정책
 
 | 파일 | 커밋 여부 | 이유 |
 |------|-----------|------|

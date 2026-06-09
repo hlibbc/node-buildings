@@ -17,7 +17,7 @@
 #   - authrpc (8551): Docker 내부 전용, host에 publish 안 함
 #   - validator API (7000, 7500): Docker 내부 전용, host에 publish 안 함
 #   - HTTP RPC, Beacon REST: 개발용 host publish (포트 변경 가능)
-#   - WebSocket: 기본 비활성 (GETH_WS_ENABLED=true로 활성화)
+#   - WebSocket: 기본 활성 (GETH_WS_ENABLED=true). 외부 노출 환경에서는 false로 설정
 #   - latest/stable 이미지 금지 — 반드시 명시 버전 사용
 
 # =====================================================
@@ -145,6 +145,7 @@ services:
       NETWORK_ID: ${NETWORK_ID:-1111}
     ports:
       - "${NODE0_RPC_PORT:-8545}:8545"
+      - "${NODE0_WS_PORT:-8546}:8546"
       - "${NODE0_GETH_P2P_PORT:-30303}:30303"
       - "${NODE0_GETH_P2P_PORT:-30303}:30303/udp"
       # authrpc (8551) — host publish 없음: Docker 내부 전용
@@ -264,6 +265,7 @@ services:
       NETWORK_ID: ${NETWORK_ID:-1111}
     ports:
       - "${NODE1_RPC_PORT:-8645}:8545"
+      - "${NODE1_WS_PORT:-8646}:8546"
       - "${NODE1_GETH_P2P_PORT:-30304}:30303"
       - "${NODE1_GETH_P2P_PORT:-30304}:30303/udp"
       # authrpc (8551) — host publish 없음

@@ -1,0 +1,24 @@
+.env
+
+# macOS
+.DS_Store
+._*
+
+# Generated / runtime configs (created by scripts)
+config/l1-chain-info.json
+config/l2_chain_config.json
+config/l2_chain_info.json
+config/deployment.json
+config/deployed_chain_info.json
+config/sequencer_config.json
+config/resolved-l1-config.env
+config/val_jwt.hex
+
+# Generated artifacts (created by scripts)
+artifacts/deployment.json
+artifacts/deployed_chain_info.json
+artifacts/l2-chain-info.json
+artifacts/deposit-l1-to-l2.json
+artifacts/fund-l1-accounts.json
+artifacts/fund-l2-accounts.json
+artifacts/l2-start.json

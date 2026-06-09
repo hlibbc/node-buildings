@@ -5,6 +5,10 @@
         "node0": "http://localhost:8545",
         "node1": "http://localhost:8645"
     },
+    "executionWs": {
+        "node0": "ws://localhost:8546",
+        "node1": "ws://localhost:8646"
+    },
     "beaconRest": {
         "node0": "http://localhost:3500",
         "node1": "http://localhost:3600"
@@ -45,19 +49,10 @@
     },
     "prefundedAccounts": [
         {
-            "name": "l1-deployer",
             "address": "0x1111111111111111111111111111111111111111",
-            "balanceEth": "10000"
-        },
-        {
-            "name": "l1-fee-recipient",
-            "address": "0x2222222222222222222222222222222222222222",
-            "balanceEth": "10000"
-        },
-        {
-            "name": "l2-deployer",
-            "address": "0x3333333333333333333333333333333333333333",
-            "balanceEth": "10000"
+            "roles": ["l2Depositor"],
+            "balanceEth": "1000000000",
+            "source": "genesis"
         }
     ],
     "generatedAt": "2026-06-08T02:00:00Z"

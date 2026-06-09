@@ -10,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_FILE="$PROJECT_DIR/.env"
-PREFUND_FILE="$PROJECT_DIR/config/prefund.json"
+PREFUND_FILE="$PROJECT_DIR/config/prefund.json"  # legacy; artifact now uses L2_*_ADDRESS env vars
 ARTIFACTS_DIR="$PROJECT_DIR/artifacts"
 OUTPUT_FILE="$ARTIFACTS_DIR/l1-chain-info.json"
 
@@ -20,6 +20,8 @@ set -a; source "$ENV_FILE"; set +a
 
 NODE0_RPC="http://localhost:${NODE0_RPC_PORT:-8545}"
 NODE1_RPC="http://localhost:${NODE1_RPC_PORT:-8645}"
+NODE0_WS="ws://localhost:${NODE0_WS_PORT:-8546}"
+NODE1_WS="ws://localhost:${NODE1_WS_PORT:-8646}"
 NODE0_BEACON="http://localhost:${NODE0_BEACON_PORT:-3500}"
 NODE1_BEACON="http://localhost:${NODE1_BEACON_PORT:-3600}"
 
@@ -118,11 +120,22 @@ V0=$(curl -sf "${NODE0_BEACON}/eth/v1/beacon/states/head/validators/0" 2>/dev/nu
 V32=$(curl -sf "${NODE1_BEACON}/eth/v1/beacon/states/head/validators/32" 2>/dev/null \
     | jq -r '.data.status // "unknown"')
 
-# Prefund accounts
-PREFUND_JSON="[]"
-if [ -f "$PREFUND_FILE" ]; then
-    PREFUND_JSON=$(jq '[.accounts[] | {name: .name, address: .address, balanceEth: .balanceEth}]' \
-        "$PREFUND_FILE" 2>/dev/null || echo "[]")
+# --- prefundedAccounts: L2 depositor from .env ---
+PREFUND_JSON='[]'
+_L2DEP_ADDR="${L2_DEPOSITOR_ADDRESS:-}"
+
+if printf '%s' "$_L2DEP_ADDR" | grep -qE '^0x[0-9a-fA-F]{40}$'; then
+    _L2DEP_ADDR_LC=$(printf '%s' "$_L2DEP_ADDR" | tr '[:upper:]' '[:lower:]')
+    _l2dep_bal_hex=$(_rpc "$NODE0_RPC" \
+        "{\"jsonrpc\":\"2.0\",\"method\":\"eth_getBalance\",\"params\":[\"${_L2DEP_ADDR_LC}\",\"latest\"],\"id\":1}" \
+        | jq -r '.result // "0x0"' 2>/dev/null || echo "0x0")
+    _l2dep_bal_eth=$(node -e \
+        "try{process.stdout.write((BigInt('${_l2dep_bal_hex}')/10n**18n).toString())}catch(e){process.stdout.write('?')}" \
+        2>/dev/null || echo "?")
+    PREFUND_JSON=$(jq -n \
+        --arg addr "$_L2DEP_ADDR_LC" \
+        --arg bal "$_l2dep_bal_eth" \
+        '[{address: $addr, roles: ["l2Depositor"], balanceEth: $bal, source: "genesis"}]')
 fi
 
 GENERATED_AT=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
@@ -138,6 +151,8 @@ jq -n \
     --argjson networkId "${NETWORK_ID:-1111}" \
     --arg n0Rpc "$NODE0_RPC" \
     --arg n1Rpc "$NODE1_RPC" \
+    --arg n0Ws "$NODE0_WS" \
+    --arg n1Ws "$NODE1_WS" \
     --arg n0Beacon "$NODE0_BEACON" \
     --arg n1Beacon "$NODE1_BEACON" \
     --arg depositAddr "$DEPOSIT_ADDR" \
@@ -166,6 +181,7 @@ jq -n \
         chainId:     $chainId,
         networkId:   $networkId,
         executionRpc: {node0: $n0Rpc, node1: $n1Rpc},
+        executionWs:  {node0: $n0Ws,  node1: $n1Ws},
         beaconRest:   {node0: $n0Beacon, node1: $n1Beacon},
         depositContractAddress: $depositAddr,
         feeRecipient: $feeRecipient,

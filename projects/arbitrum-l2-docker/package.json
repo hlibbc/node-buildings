@@ -1,0 +1,27 @@
+{
+  "name": "arbitrum-l2-docker",
+  "version": "0.1.0",
+  "description": "Arbitrum Nitro L2 devnet — single sequencer simple mode, external L1",
+  "scripts": {
+    "check":          "./scripts/00-check-requirements.sh",
+    "load:l1":        "./scripts/01-load-l1-config.sh",
+    "fund:l1":        "./scripts/02-fund-l1-role-accounts.sh",
+    "config:chain":   "./scripts/02-render-chain-config.sh",
+    "deploy":         "./scripts/03-deploy-rollup.sh",
+    "config:node":    "./scripts/04-render-node-configs.sh",
+    "start":          "./scripts/05-start-l2.sh",
+    "deposit":        "./scripts/06-deposit-eth-to-l2.sh",
+    "distribute":     "./scripts/07-distribute-l2-eth.sh",
+    "verify":         "./scripts/08-verify.sh",
+    "export:artifact":"./scripts/09-export-artifact.sh",
+    "stop":           "./scripts/10-stop.sh",
+    "clean":          "./scripts/11-clean.sh",
+    "up": "pnpm run check && pnpm run load:l1 && pnpm run fund:l1 && pnpm run config:chain && pnpm run deploy && pnpm run config:node && pnpm run start && pnpm run deposit && pnpm run distribute && pnpm run verify && pnpm run export:artifact"
+  },
+  "dependencies": {
+    "ethers": "^6.13.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

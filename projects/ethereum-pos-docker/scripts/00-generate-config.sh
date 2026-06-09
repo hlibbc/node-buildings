@@ -122,6 +122,48 @@ else
     echo "        (필요 시: cp config/prefund.json.example config/prefund.json 후 주소 편집)"
 fi
 
+# --- L2 depositor prefund (.env L2_DEPOSITOR_ADDRESS) ---
+echo ""
+echo "L2 depositor prefund 확인..."
+
+_L2DEP_ADDR="${L2_DEPOSITOR_ADDRESS:-}"
+_L2DEP_BAL_ETH="${L2_DEPOSITOR_PREFUND_BALANCE_ETH:-1000000000}"
+
+if [ -z "$_L2DEP_ADDR" ]; then
+    echo "  INFO: L2_DEPOSITOR_ADDRESS 미설정 — L2 depositor prefund 건너뜀"
+    echo "        (parent L1 용도라면 .env에서 L2_DEPOSITOR_ADDRESS 설정 후 재구축 권장)"
+else
+    if ! printf '%s' "$_L2DEP_ADDR" | grep -qE '^0x[0-9a-fA-F]{40}$'; then
+        echo "ERROR: L2_DEPOSITOR_ADDRESS 잘못된 주소 형식: $_L2DEP_ADDR"
+        exit 1
+    fi
+    if ! command -v node >/dev/null 2>&1; then
+        echo "ERROR: Node.js(node)가 PATH에 없습니다 — L2_DEPOSITOR_ADDRESS prefund 처리에 필요"
+        exit 1
+    fi
+    _L2DEP_WEI_HEX=$(node -e \
+        "process.stdout.write('0x'+(BigInt('${_L2DEP_BAL_ETH}')*10n**18n).toString(16))" \
+        2>/dev/null || true)
+    if [ -z "$_L2DEP_WEI_HEX" ]; then
+        echo "ERROR: L2_DEPOSITOR_PREFUND_BALANCE_ETH 값이 잘못됨: ${_L2DEP_BAL_ETH}"
+        exit 1
+    fi
+    _L2DEP_BARE=$(printf '%s' "${_L2DEP_ADDR#0x}" | tr '[:upper:]' '[:lower:]')
+    if [ "$_L2DEP_BARE" = "$DEPOSIT_CONTRACT_ADDR_BARE" ]; then
+        echo "ERROR: L2_DEPOSITOR_ADDRESS가 deposit contract 주소와 충돌: $_L2DEP_ADDR"
+        exit 1
+    fi
+    _L2DEP_EXC=$(jq -r --arg a "$_L2DEP_BARE" '.alloc[$a].code // empty' "$GENESIS_FILE" 2>/dev/null || true)
+    if [ -n "$_L2DEP_EXC" ]; then
+        echo "ERROR: L2_DEPOSITOR_ADDRESS($_L2DEP_ADDR)에 이미 contract code 존재"
+        exit 1
+    fi
+    jq --arg a "$_L2DEP_BARE" --arg b "$_L2DEP_WEI_HEX" \
+        '.alloc[$a] = {"balance": $b}' \
+        "$GENESIS_FILE" > "${GENESIS_FILE}.tmp" && mv "${GENESIS_FILE}.tmp" "$GENESIS_FILE"
+    echo "  prefund [l2Depositor]: $_L2DEP_ADDR  (${_L2DEP_BAL_ETH} ETH)"
+fi
+
 # --- config.yml ---
 CONFIG_YML="$CONFIG_DIR/config.yml"
 echo ""

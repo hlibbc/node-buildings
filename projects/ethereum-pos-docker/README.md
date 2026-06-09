@@ -65,6 +65,36 @@ pnpm run verify
 
 ---
 
+## L2/L3 parent chain으로 사용하기
+
+L1은 L2 내부 역할별 주소를 알지 않습니다.  
+L1은 **L2 bootstrap depositor** 주소 하나만 genesis에서 prefund합니다.  
+L2 deployment 프로젝트가 이 계정으로 L1→L2 ETH deposit을 실행하고, 이후 L2 내부에서 역할별 계정들에게 분배합니다.
+
+```bash
+cp .env.sample .env
+
+# .env에서 L2 depositor 설정 (public address만 — private key는 L2 프로젝트에서 관리)
+# L2_DEPOSITOR_ADDRESS=0x...
+# L2_DEPOSITOR_PREFUND_BALANCE_ETH=1000000000   (기본값)
+
+pnpm run stop
+pnpm run clean
+pnpm run generate    # genesis alloc에 L2_DEPOSITOR_ADDRESS 자동 삽입
+pnpm run init
+pnpm run start
+pnpm run peer:connect
+
+# finality 달성 후
+pnpm run verify                 # depositor 잔액 검증 포함
+pnpm run export:artifact        # artifacts/l1-chain-info.json 생성
+cat artifacts/l1-chain-info.json | jq '.prefundedAccounts'
+```
+
+> Prefund는 genesis generation time에만 반영됩니다. `L2_DEPOSITOR_ADDRESS` 변경 후에는 반드시 `clean → generate → init → start` 순서로 재구축해야 합니다.
+
+---
+
 ## 포트
 
 | 서비스 | host 포트 | 용도 |
@@ -83,7 +113,7 @@ pnpm run verify
 - **authrpc (8551)**: Docker network 내부 전용. `geth-node0:8551` 으로 beacon이 접근
 - **validator API**: `127.0.0.1` 바인딩, host publish 없음
 - **HTTP RPC API**: `eth,net,web3,txpool` 만 노출 (`debug`, `admin`, `personal` 제외)
-- **WebSocket**: 기본 비활성 (`GETH_WS_ENABLED=true` 로 활성화)
+- **WebSocket**: 기본 활성 (`GETH_WS_ENABLED=true`). 외부 노출 환경에서는 `false`로 설정
 - **이미지 버전**: `latest`/`stable` 금지 — `versions.lock` 기준, `.env`의 명시 버전 사용
 
 ---

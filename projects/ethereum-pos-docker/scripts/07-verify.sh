@@ -140,6 +140,31 @@ for IDX_BEACON in "0|$NODE0_BEACON|node0" "32|$NODE1_BEACON|node1"; do
     fi
 done
 
+# --- L2 Depositor Account ---
+echo ""
+echo "--- L2 Depositor Account ---"
+
+_L2DEP="${L2_DEPOSITOR_ADDRESS:-}"
+if [ -z "$_L2DEP" ]; then
+    _info "L2_DEPOSITOR_ADDRESS not set; skip L2 depositor balance check"
+else
+    if ! printf '%s' "$_L2DEP" | grep -qE '^0x[0-9a-fA-F]{40}$'; then
+        _fail "[l2Depositor] L2_DEPOSITOR_ADDRESS 잘못된 주소 형식: $_L2DEP"
+    else
+        _l2dep_bal=$(_rpc "$NODE0_RPC" "eth_getBalance" "[\"$_L2DEP\", \"latest\"]" \
+            | jq -r '.result // "0x0"' 2>/dev/null || echo "0x0")
+        _l2dep_stripped=$(printf '%s' "$_l2dep_bal" | sed 's/^0x//' | sed 's/^0*//')
+        if [ -n "$_l2dep_stripped" ]; then
+            _l2dep_eth=$(node -e \
+                "try{process.stdout.write((BigInt('${_l2dep_bal}')/10n**18n).toString())}catch(e){process.stdout.write('?')}" \
+                2>/dev/null || echo "?")
+            _ok "[l2Depositor] $_L2DEP  balance=${_l2dep_eth} ETH"
+        else
+            _fail "[l2Depositor] $_L2DEP  balance=0 (prefund는 genesis generation time에만 반영됨 — clean → generate → init → start 재구축 필요)"
+        fi
+    fi
+fi
+
 echo ""
 echo "========================================"
 echo " 결과: PASS=$PASS  FAIL=$FAIL  WARN=$WARN"
