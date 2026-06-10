@@ -81,15 +81,15 @@ fi
 # ---------------------------------------------------------------
 echo ""
 echo "--- L2 RPC 응답 대기 (최대 120s) ---"
-L2_RPC="http://localhost:${L2_RPC_PORT:-8547}"
+L2_RPC="http://localhost:${L2_RPC_PORT:-9545}"
 _info "L2 RPC: $L2_RPC"
 
 TIMEOUT=120
 CHAIN_ID_HEX=""
 RPC_WAIT_SECS=0
 for i in $(seq 1 $TIMEOUT); do
-    RESP=$(_rpc "$L2_RPC" '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}')
-    CHAIN_ID_HEX=$(echo "$RESP" | jq -r '.result // empty' 2>/dev/null || echo "")
+    RESP=$(_rpc "$L2_RPC" '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' || true)
+    CHAIN_ID_HEX=$(printf '%s' "$RESP" | jq -r '.result // empty' 2>/dev/null || true)
     if [ -n "$CHAIN_ID_HEX" ]; then
         RPC_WAIT_SECS="$i"
         break
@@ -125,29 +125,60 @@ else
 fi
 
 # ---------------------------------------------------------------
-# 블록 생성 확인 (최대 60s 재시도, 미증가 시 FAIL)
+# 블록 생성 확인 — depositor에서 테스트 tx 전송 후 포함 확인
+# Nitro는 empty block을 자동 생성하지 않으므로 tx를 직접 전송합니다.
 # ---------------------------------------------------------------
 echo ""
-echo "--- 블록 생성 확인 (최대 60s) ---"
-BN1_HEX=$(_rpc "$L2_RPC" '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | jq -r '.result // empty')
+echo "--- 블록 생성 확인 (테스트 tx 방식) ---"
+BN1_HEX=$(_rpc "$L2_RPC" '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' || true)
+BN1_HEX=$(printf '%s' "$BN1_HEX" | jq -r '.result // empty' 2>/dev/null || true)
 BN1=$(hex_to_dec "${BN1_HEX:-0x0}")
 _info "기준 블록: $BN1"
 
 BLOCK_STARTED=0
 BN2=0
-for i in $(seq 1 60); do
-    BN2_HEX=$(_rpc "$L2_RPC" '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | jq -r '.result // empty')
-    BN2=$(hex_to_dec "${BN2_HEX:-0x0}")
-    if [ "$BN2" -gt "$BN1" ]; then
+
+if [ -n "${L2_DEPOSITOR_PRIVATE_KEY:-}" ]; then
+    _info "테스트 tx 전송 (depositor → 0xdead, 1 wei) …"
+    TX_RESULT=$(node -e "
+const { ethers } = require('ethers');
+const p = new ethers.JsonRpcProvider('$L2_RPC');
+const w = new ethers.Wallet('$L2_DEPOSITOR_PRIVATE_KEY', p);
+(async () => {
+  try {
+    const tx = await w.sendTransaction({ to: '0x000000000000000000000000000000000000dEaD', value: 1n });
+    const r = await tx.wait(1, 45000);
+    if (!r) { console.log('TIMEOUT'); process.exit(1); }
+    console.log('OK:' + r.blockNumber);
+  } catch(e) { console.log('ERR:' + e.message.split('\n')[0]); process.exit(1); }
+})();
+" 2>&1 || true)
+
+    if printf '%s' "$TX_RESULT" | grep -q '^OK:'; then
+        BN2=$(printf '%s' "$TX_RESULT" | grep -oE '[0-9]+$')
         BLOCK_STARTED=1
-        _ok "블록 생성 확인: $BN1 → $BN2 (${i}s 내)"
-        break
+        _ok "블록 생성 확인: $BN1 → $BN2 (테스트 tx 포함)"
+    else
+        _warn "테스트 tx 실패: $TX_RESULT — polling fallback으로 전환"
     fi
-    sleep 1
-done
+fi
 
 if [ "$BLOCK_STARTED" -eq 0 ]; then
-    echo "[ERROR] L2 블록 생성 없음 (60s timeout)"
+    for i in $(seq 1 60); do
+        BN2_HEX=$(_rpc "$L2_RPC" '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' || true)
+        BN2_HEX=$(printf '%s' "$BN2_HEX" | jq -r '.result // empty' 2>/dev/null || true)
+        BN2=$(hex_to_dec "${BN2_HEX:-0x0}")
+        if [ "$BN2" -gt "$BN1" ]; then
+            BLOCK_STARTED=1
+            _ok "블록 생성 확인: $BN1 → $BN2 (${i}s 내)"
+            break
+        fi
+        sleep 1
+    done
+fi
+
+if [ "$BLOCK_STARTED" -eq 0 ]; then
+    echo "[ERROR] L2 블록 생성 없음 (tx 전송 실패 + 60s polling timeout)"
     echo "        로그 확인: docker compose logs sequencer"
     echo "        parent chain WS 연결 확인: sequencer_config.json parent-chain.connection.url"
     exit 1

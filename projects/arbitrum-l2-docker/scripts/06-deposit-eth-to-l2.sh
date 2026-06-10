@@ -67,7 +67,7 @@ _ok "Inbox = $INBOX_ADDR"
 # ---------------------------------------------------------------
 echo ""
 echo "--- L2 RPC 확인 ---"
-L2_RPC="http://localhost:${L2_RPC_PORT:-8547}"
+L2_RPC="http://localhost:${L2_RPC_PORT:-9545}"
 L2_RESP=$(_rpc "$L2_RPC" '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}')
 L2_CHAIN_ID_HEX=$(echo "$L2_RESP" | jq -r '.result // empty' 2>/dev/null || echo "")
 if [ -z "$L2_CHAIN_ID_HEX" ]; then

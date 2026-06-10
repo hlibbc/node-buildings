@@ -28,14 +28,12 @@ services:
       - --node.feed.output.port=9642
       - --http.api=net,web3,eth,txpool,debug
     ports:
-      - "${L2_RPC_PORT:-8547}:8547"
-      - "${L2_WS_PORT:-8548}:8548"
+      - "${L2_RPC_PORT:-9545}:8547"
+      - "${L2_WS_PORT:-9546}:8548"
       - "${L2_FEED_PORT:-9642}:9642"
     volumes:
       - ./config:/config:ro
       - seqdata:/home/user/.arbitrum/local/nitro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
 volumes:

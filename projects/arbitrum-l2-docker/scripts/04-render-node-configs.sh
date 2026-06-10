@@ -130,21 +130,30 @@ echo "--- sequencer_config.json 생성 ---"
 
 SEQ_CONFIG="$PROJECT_DIR/config/sequencer_config.json"
 
-# Docker container 내에서 localhost/127.0.0.1은 컨테이너 자신을 가리킴.
-# sequencer_config.json에는 host.docker.internal로 변환하여 저장.
-PARENT_CHAIN_WS_CONTAINER=$(printf '%s' "$PARENT_CHAIN_WS" | \
-    sed 's|://localhost:|://host.docker.internal:|' | \
-    sed 's|://127\.0\.0\.1:|://host.docker.internal:|')
-if [ "$PARENT_CHAIN_WS_CONTAINER" != "$PARENT_CHAIN_WS" ]; then
-    _info "  PARENT_CHAIN_WS (host)      = $PARENT_CHAIN_WS"
-    _info "  PARENT_CHAIN_WS (container) = $PARENT_CHAIN_WS_CONTAINER"
-fi
+# Nitro expects private keys WITHOUT the 0x prefix.
+# Strip it here; .env originals are not modified.
+NITRO_BATCH_POSTER_PRIVATE_KEY="${L2_BATCH_POSTER_PRIVATE_KEY#0x}"
+NITRO_VALIDATOR_PRIVATE_KEY="${L2_VALIDATOR_PRIVATE_KEY#0x}"
+
+# Validate: must be exactly 64 lowercase hex chars after stripping
+for _varname in NITRO_BATCH_POSTER_PRIVATE_KEY NITRO_VALIDATOR_PRIVATE_KEY; do
+    _val="${!_varname}"
+    if ! printf '%s' "$_val" | grep -qE '^[0-9a-fA-F]{64}$'; then
+        echo "[ERROR] $_varname is not a valid 64-char hex key (got ${#_val} chars)"
+        echo "        Check the corresponding L2_*_PRIVATE_KEY in .env"
+        exit 1
+    fi
+done
+_ok "batch-poster private key: 64-char hex (0x stripped)"
+_ok "validator private key:    64-char hex (0x stripped)"
+
+_info "  PARENT_CHAIN_WS = $PARENT_CHAIN_WS"
 
 jq -n \
-    --arg parent_chain_ws "$PARENT_CHAIN_WS_CONTAINER" \
+    --arg parent_chain_ws "$PARENT_CHAIN_WS" \
     --argjson chain_id "$L2_CHAIN_ID" \
-    --arg batch_poster_pk "$L2_BATCH_POSTER_PRIVATE_KEY" \
-    --arg validator_pk "$L2_VALIDATOR_PRIVATE_KEY" \
+    --arg batch_poster_pk "$NITRO_BATCH_POSTER_PRIVATE_KEY" \
+    --arg validator_pk "$NITRO_VALIDATOR_PRIVATE_KEY" \
     '{
         "ensure-rollup-deployment": false,
         "parent-chain": {
@@ -204,7 +213,12 @@ jq -n \
         },
         "execution": {
             "sequencer": {
-                "enable": true
+                "enable": true,
+                "expected-surplus-soft-threshold": "-1000000000000000000",
+                "expected-surplus-hard-threshold": "-1000000000000000000",
+                "dangerous": {
+                    "disable-blob-base-fee-check": true
+                }
             },
             "forwarding-target": "null"
         },
@@ -222,7 +236,7 @@ jq -n \
     }' > "$SEQ_CONFIG"
 
 _ok "config/sequencer_config.json 생성 완료"
-_info "  parent-chain.connection.url      = $PARENT_CHAIN_WS_CONTAINER"
+_info "  parent-chain.connection.url      = $PARENT_CHAIN_WS"
 _info "  chain.id                         = $L2_CHAIN_ID"
 _info "  execution.sequencer.enable       = true"
 _info "  node.sequencer                   = true"

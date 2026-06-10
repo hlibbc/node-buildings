@@ -28,7 +28,7 @@ load_resolved_l1_config
 echo "=== 08-verify (arbitrum-l2-docker) ==="
 echo ""
 
-L2_RPC="http://localhost:${L2_RPC_PORT:-8547}"
+L2_RPC="http://localhost:${L2_RPC_PORT:-9545}"
 L2_FEED_PORT_VAL="${L2_FEED_PORT:-9642}"
 
 # Helper: eth_getCode로 컨트랙트 존재 확인
@@ -187,18 +187,57 @@ fi
 
 # ---------------------------------------------------------------
 # [L2] 블록 생성 확인
+# Nitro는 빈 블록을 생성하지 않으므로 test tx를 전송해서 확인합니다.
 # ---------------------------------------------------------------
 echo ""
 echo "--- L2 블록 생성 ---"
-BN1_HEX=$(_rpc "$L2_RPC" '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | jq -r '.result // empty')
+BN1_HEX=$(_rpc "$L2_RPC" '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' || true)
+BN1_HEX=$(printf '%s' "$BN1_HEX" | jq -r '.result // empty' 2>/dev/null || true)
 BN1=$(hex_to_dec "${BN1_HEX:-0x0}")
-_info "현재 블록: $BN1  (6초 대기 중...)"
-sleep 6
-BN2_HEX=$(_rpc "$L2_RPC" '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | jq -r '.result // empty')
-BN2=$(hex_to_dec "${BN2_HEX:-0x0}")
-if [ "$BN2" -gt "$BN1" ]; then
-    _ok "블록 생성 중: $BN1 → $BN2"
-else
+_info "현재 블록: $BN1"
+
+BLOCK_OK=0
+BN2=0
+
+if [ -n "${L2_DEPOSITOR_PRIVATE_KEY:-}" ]; then
+    TX_RESULT=$(node -e "
+const { ethers } = require('ethers');
+const p = new ethers.JsonRpcProvider('$L2_RPC');
+const w = new ethers.Wallet('$L2_DEPOSITOR_PRIVATE_KEY', p);
+(async () => {
+  try {
+    const tx = await w.sendTransaction({ to: '0x000000000000000000000000000000000000dEaD', value: 1n });
+    const r = await tx.wait(1, 30000);
+    if (!r) { console.log('TIMEOUT'); process.exit(1); }
+    console.log('OK:' + r.blockNumber);
+  } catch(e) { console.log('ERR:' + e.message.split('\n')[0]); process.exit(1); }
+})();
+" 2>&1 || true)
+    if printf '%s' "$TX_RESULT" | grep -q '^OK:'; then
+        BN2=$(printf '%s' "$TX_RESULT" | grep -oE '[0-9]+$')
+        BLOCK_OK=1
+        _ok "블록 생성 중: $BN1 → $BN2 (테스트 tx 포함)"
+    else
+        _warn "테스트 tx 실패: $TX_RESULT — polling fallback"
+    fi
+fi
+
+if [ "$BLOCK_OK" -eq 0 ]; then
+    _info "polling 방식으로 블록 생성 확인 (최대 30s)..."
+    for i in $(seq 1 30); do
+        BN2_HEX=$(_rpc "$L2_RPC" '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' || true)
+        BN2_HEX=$(printf '%s' "$BN2_HEX" | jq -r '.result // empty' 2>/dev/null || true)
+        BN2=$(hex_to_dec "${BN2_HEX:-0x0}")
+        if [ "$BN2" -gt "$BN1" ]; then
+            BLOCK_OK=1
+            _ok "블록 생성 중: $BN1 → $BN2 (${i}s)"
+            break
+        fi
+        sleep 1
+    done
+fi
+
+if [ "$BLOCK_OK" -eq 0 ]; then
     _fail "블록 생성 없음: $BN1 → $BN2  (sequencer 상태 이상)"
 fi
 

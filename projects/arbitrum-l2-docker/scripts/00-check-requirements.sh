@@ -127,6 +127,23 @@ else
     _fail "node_modules 없음  →  pnpm install  (fund:l1/deposit/distribute에서 ethers 사용)"
 fi
 
+# ---------------------------------------------------------------
+# private key → address 파생 일치 검증
+# deploy / fund:l1 단계까지 가서 터지는 걸 방지하기 위해 check 단계에서 먼저 잡음.
+# ---------------------------------------------------------------
+echo ""
+echo "--- private key → address 파생 검증 ---"
+if [ ! -d "$PROJECT_DIR/node_modules" ]; then
+    _warn "node_modules 없음 — key/address 파생 검증 건너뜀 (pnpm install 후 재실행)"
+else
+    _VERIFY_OUT=$(PROJECT_ROOT="$PROJECT_DIR" node "$SCRIPT_DIR/js/verify-keys.js" 2>&1)
+    _VERIFY_EXIT=$?
+    printf '%s\n' "$_VERIFY_OUT"
+    if [ "$_VERIFY_EXIT" -ne 0 ]; then
+        ERRORS=$((ERRORS + 1))
+    fi
+fi
+
 echo ""
 echo "--- L2 체인 설정 ---"
 L2_CHAIN_ID="${L2_CHAIN_ID:-}"
@@ -160,16 +177,18 @@ echo ""
 echo "--- Well-known key 안전 검사 ---"
 
 # Anvil well-known private keys (accounts #0–#9)
+# mnemonic: "test test test test test test test test test test test junk"
+# path: m/44'/60'/0'/0/i
 _ANVIL_KEYS="
 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-0x59c6995e998f97a5a0044966f0945382e9dae61377c9d6aefaf11c8f8d7bd4ee
-0x5de4111afa1a4b4bc8b6fc3fbb795ccca43dbb99ca0e79e4877e8e19a643c8e
-0x7c852118294bb2ba8bbf7e7cc2f2fba4f7442617d9e4a7685e57e72c0c6cde2c
-0x47e179ec197488961f6fb3fcb1d04bfb75de443a9a06b5bcb1ce7d089903973
-0x8b3a350cf5c34c9194ca3a545d8e2df3544d4f0ef51e0b5de6e787de1400840
+0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a
+0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6
+0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a
+0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba
 0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e
 0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356
-0xdbda1821b80551c9d65939329250132c444b3ebff4e91d40fb52eabb9cead4c5
+0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97
 0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6
 "
 

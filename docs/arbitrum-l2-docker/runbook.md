@@ -159,14 +159,44 @@ pnpm run export:artifact
 
 ---
 
-## STEP 1 — L1 artifact를 L2 config로 복사
+## STEP 1 — L1 advertised endpoint 설정 후 artifact 생성
+
+L1 artifact를 생성하기 전에 `projects/ethereum-pos-docker/.env`에 advertised endpoint를 설정해야 합니다.
+
+```
+# projects/ethereum-pos-docker/.env
+L1_ADVERTISED_HOST=192.168.0.30       # L2에서 접근 가능한 IP 또는 DNS
+```
+
+포트는 `NODE0_RPC_PORT` / `NODE0_WS_PORT` / `NODE0_BEACON_PORT` 변수에서 자동으로 조합됩니다 (기본값 8545/8546/3500).
+
+reverse proxy, TLS, non-standard URL이 필요한 경우에만 full URL override를 사용합니다:
+
+```
+L1_ADVERTISED_RPC_URL=https://l1-devnet.example.com/rpc
+L1_ADVERTISED_WS_URL=wss://l1-devnet.example.com/ws
+L1_ADVERTISED_BEACON_URL=https://l1-devnet.example.com/beacon
+```
+
+> **주의**: `localhost`나 `127.0.0.1`은 advertised endpoint로 사용하지 마세요.
+> 같은 인스턴스라도 내부망 IP 또는 DNS를 사용하세요.
+
+설정 후 L1 artifact 생성:
+
+```bash
+cd projects/ethereum-pos-docker
+pnpm run export:artifact
+```
+
+L1 artifact를 L2 config로 복사:
 
 ```bash
 cp projects/ethereum-pos-docker/artifacts/l1-chain-info.json \
    projects/arbitrum-l2-docker/config/l1-chain-info.json
 ```
 
-이 복사 이후 L2 프로젝트는 `config/l1-chain-info.json`에 적힌 외부 L1 RPC/WS를 parent chain으로 사용합니다.
+이 복사 이후 L2 프로젝트는 `l1-chain-info.json`의 `.endpoints.advertised`를 parent chain endpoint로 사용합니다.
+advertised endpoint가 없으면 `pnpm run load:l1`이 실패합니다.
 
 ---
 
@@ -225,7 +255,12 @@ L2_SEQUENCER_FUND_ETH=1000
 L2_BATCH_POSTER_FUND_ETH=1000
 L2_VALIDATOR_FUND_ETH=1000
 L2_TEST_USER_FUND_ETH=100
+
+# L3 parent chain용 advertised endpoint (L3 배포 전 필요)
+L2_ADVERTISED_HOST=192.168.0.31       # L3에서 접근 가능한 IP 또는 DNS
 ```
+
+> `L2_ADVERTISED_HOST` 포트는 `L2_RPC_PORT` / `L2_WS_PORT` / `L2_FEED_PORT`에서 자동 조합됩니다 (기본값 9545/9546/9642).
 
 ### 전체 파이프라인 (자동)
 
@@ -454,7 +489,7 @@ pnpm run export:artifact
    - `node.staker.dangerous.without-block-validator = true`
    - `node.dangerous.no-sequencer-coordinator = true`
    - `node.batch-poster.redis-url = ""`
-   - `parent-chain.connection.url` = `PARENT_CHAIN_WS` (localhost → `host.docker.internal` 자동 변환)
+   - `parent-chain.connection.url` = `PARENT_CHAIN_WS` (L1 advertised WS endpoint 그대로 사용)
 
 생성 파일:
 - `config/sequencer_config.json`

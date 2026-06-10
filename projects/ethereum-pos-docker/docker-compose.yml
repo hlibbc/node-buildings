@@ -121,7 +121,7 @@ services:
           EXTRA="--bootnodes=$$GETH_NODE1_ENODE"
         fi
         if [ "$${GETH_WS_ENABLED:-false}" = "true" ]; then
-          EXTRA="$$EXTRA --ws --ws.api=eth,net,web3 --ws.addr=0.0.0.0 --ws.port=8546 --ws.origins=*"
+          EXTRA="$$EXTRA --ws --ws.api=eth,net,web3,debug,txpool --ws.addr=0.0.0.0 --ws.port=8546 --ws.origins=*"
         fi
         exec geth \
           --datadir=/data \
@@ -129,7 +129,7 @@ services:
           --networkid=$${NETWORK_ID:-1111} \
           --port=30303 \
           --http \
-          --http.api=eth,net,web3,txpool \
+          --http.api=eth,net,web3,txpool,debug \
           --http.addr=0.0.0.0 \
           --http.port=8545 \
           --http.corsdomain='*' \
@@ -241,7 +241,7 @@ services:
           EXTRA="--bootnodes=$$GETH_NODE0_ENODE"
         fi
         if [ "$${GETH_WS_ENABLED:-false}" = "true" ]; then
-          EXTRA="$$EXTRA --ws --ws.api=eth,net,web3 --ws.addr=0.0.0.0 --ws.port=8546 --ws.origins=*"
+          EXTRA="$$EXTRA --ws --ws.api=eth,net,web3,debug,txpool --ws.addr=0.0.0.0 --ws.port=8546 --ws.origins=*"
         fi
         exec geth \
           --datadir=/data \
@@ -249,7 +249,7 @@ services:
           --networkid=$${NETWORK_ID:-1111} \
           --port=30303 \
           --http \
-          --http.api=eth,net,web3,txpool \
+          --http.api=eth,net,web3,txpool,debug \
           --http.addr=0.0.0.0 \
           --http.port=8545 \
           --http.corsdomain='*' \

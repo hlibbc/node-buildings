@@ -127,8 +127,8 @@ pnpm run distribute -- --force  # L2 ETH 강제 재배분
 
 | 서비스 | host 포트 | 용도 |
 |--------|-----------|------|
-| L2 HTTP RPC | 8547 | L2 JSON-RPC |
-| L2 WS RPC | 8548 | L2 WebSocket |
+| L2 HTTP RPC | 9545 | L2 JSON-RPC |
+| L2 WS RPC | 9546 | L2 WebSocket |
 | L2 Feed | 9642 | Sequencer feed (L3 parent feed 용) |
 
 ---

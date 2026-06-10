@@ -59,12 +59,25 @@ _extract() {
     echo "$val"
 }
 
-ROLLUP_ADDR=$(_extract '.[0].rollup.rollup          // empty' '.rollup          // empty')
-BRIDGE_ADDR=$(_extract '.[0].rollup.bridge          // empty' '.bridge          // empty')
-INBOX_ADDR=$(_extract  '.[0].rollup.inbox           // empty' '.inbox           // empty')
-OUTBOX_ADDR=$(_extract '.[0].rollup.outbox          // empty' '.outbox          // empty')
-SEQ_INBOX_ADDR=$(_extract '.[0].rollup.sequencerInbox    // empty' '.sequencerInbox    // empty')
-EVENT_INBOX_ADDR=$(_extract '.[0].rollup.rollupEventInbox // empty' '.rollupEventInbox // empty')
+ROLLUP_ADDR=$(_extract '.[0].rollup.rollup             // empty' '.rollup             // empty')
+BRIDGE_ADDR=$(_extract '.[0].rollup.bridge             // empty' '.bridge             // empty')
+INBOX_ADDR=$(_extract  '.[0].rollup.inbox              // empty' '.inbox              // empty')
+OUTBOX_ADDR=$(_extract '.[0].rollup.outbox             // empty' '.outbox             // empty')
+SEQ_INBOX_ADDR=$(_extract '.[0].rollup."sequencer-inbox" // empty' '."sequencer-inbox" // empty')
+EVENT_INBOX_ADDR=$(_extract '.[0].rollup.rollupEventInbox  // empty' '.rollupEventInbox  // empty')
+
+# outbox is not emitted by the rollupcreator; query on-chain from rollup.outbox() if missing.
+if [ -z "$OUTBOX_ADDR" ] || [ "$OUTBOX_ADDR" = "null" ]; then
+    if [ -n "${ROLLUP_ADDR:-}" ] && [ -n "${PARENT_CHAIN_RPC:-}" ]; then
+        _RAW=$(_rpc "$PARENT_CHAIN_RPC" \
+            "{\"jsonrpc\":\"2.0\",\"method\":\"eth_call\",\"params\":[{\"to\":\"$ROLLUP_ADDR\",\"data\":\"0xce11e6ab\"},\"latest\"],\"id\":1}" \
+            2>/dev/null || echo "")
+        _HEX=$(printf '%s' "$_RAW" | jq -r '.result // empty' 2>/dev/null || echo "")
+        if [ "${#_HEX}" -ge 66 ]; then
+            OUTBOX_ADDR="0x${_HEX: -40}"
+        fi
+    fi
+fi
 
 for pair in "rollup:$ROLLUP_ADDR" "bridge:$BRIDGE_ADDR" "inbox:$INBOX_ADDR" "outbox:$OUTBOX_ADDR" "sequencerInbox:$SEQ_INBOX_ADDR"; do
     name="${pair%%:*}"
@@ -87,9 +100,58 @@ echo ""
 echo "--- artifacts/l2-chain-info.json 생성 ---"
 
 GENERATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-L2_RPC_URL="http://localhost:${L2_RPC_PORT:-8547}"
-L2_WS_URL="ws://localhost:${L2_WS_PORT:-8548}"
+L2_RPC_URL="http://localhost:${L2_RPC_PORT:-9545}"
+L2_WS_URL="ws://localhost:${L2_WS_PORT:-9546}"
 FEED_URL="ws://localhost:${L2_FEED_PORT:-9642}"
+
+# --- Advertised endpoint 계산 (L3 parent chain 소비용) ---
+# 우선순위:
+#   1. L2_ADVERTISED_*_URL (full URL override)
+#   2. L2_ADVERTISED_HOST + port (L2_ADVERTISED_*_PORT > L2_*_PORT > default)
+#   3. 없으면 빈 값 (→ L3 deploy FAIL)
+
+_adv_l2_rpc_port="${L2_ADVERTISED_RPC_PORT:-${L2_RPC_PORT:-9545}}"
+_adv_l2_ws_port="${L2_ADVERTISED_WS_PORT:-${L2_WS_PORT:-9546}}"
+_adv_l2_feed_port="${L2_ADVERTISED_FEED_PORT:-${L2_FEED_PORT:-9642}}"
+
+if [ -n "${L2_ADVERTISED_RPC_URL:-}" ]; then
+    ADV_L2_RPC="$L2_ADVERTISED_RPC_URL"
+elif [ -n "${L2_ADVERTISED_HOST:-}" ]; then
+    ADV_L2_RPC="http://${L2_ADVERTISED_HOST}:${_adv_l2_rpc_port}"
+else
+    ADV_L2_RPC=""
+fi
+
+if [ -n "${L2_ADVERTISED_WS_URL:-}" ]; then
+    ADV_L2_WS="$L2_ADVERTISED_WS_URL"
+elif [ -n "${L2_ADVERTISED_HOST:-}" ]; then
+    ADV_L2_WS="ws://${L2_ADVERTISED_HOST}:${_adv_l2_ws_port}"
+else
+    ADV_L2_WS=""
+fi
+
+if [ -n "${L2_ADVERTISED_FEED_URL:-}" ]; then
+    ADV_L2_FEED="$L2_ADVERTISED_FEED_URL"
+elif [ -n "${L2_ADVERTISED_HOST:-}" ]; then
+    ADV_L2_FEED="ws://${L2_ADVERTISED_HOST}:${_adv_l2_feed_port}"
+else
+    ADV_L2_FEED=""
+fi
+
+if [ -n "${L2_ADVERTISED_HOST:-}" ] || \
+   [ -n "${L2_ADVERTISED_RPC_URL:-}" ] || \
+   [ -n "${L2_ADVERTISED_WS_URL:-}" ] || \
+   [ -n "${L2_ADVERTISED_FEED_URL:-}" ]; then
+    _info "L2 advertised RPC  = $ADV_L2_RPC"
+    _info "L2 advertised WS   = $ADV_L2_WS"
+    _info "L2 advertised Feed = $ADV_L2_FEED"
+fi
+
+if [ -z "$ADV_L2_RPC" ] || [ -z "$ADV_L2_WS" ] || [ -z "$ADV_L2_FEED" ]; then
+    _warn "L2 advertised endpoint is not configured."
+    _warn "Set L2_ADVERTISED_HOST or L2_ADVERTISED_*_URL."
+    _warn "L3 deploy will fail until L2 advertised endpoint is configured."
+fi
 
 DEPOSIT_DATA=$(cat "$PROJECT_DIR/artifacts/deposit-l1-to-l2.json")
 FUND_L1_DATA=$(jq '.distributions' "$PROJECT_DIR/artifacts/fund-l1-accounts.json")
@@ -105,6 +167,9 @@ jq -n \
     --arg     l2_rpc           "$L2_RPC_URL" \
     --arg     l2_ws            "$L2_WS_URL" \
     --arg     feed_url         "$FEED_URL" \
+    --arg     adv_rpc          "$ADV_L2_RPC" \
+    --arg     adv_ws           "$ADV_L2_WS" \
+    --arg     adv_feed         "$ADV_L2_FEED" \
     --arg     rollup           "$ROLLUP_ADDR" \
     --arg     bridge           "$BRIDGE_ADDR" \
     --arg     inbox            "$INBOX_ADDR" \
@@ -142,6 +207,18 @@ jq -n \
         },
         "sequencerFeed": {
             "url": $feed_url
+        },
+        "endpoints": {
+            "local": {
+                "executionRpc":   $l2_rpc,
+                "executionWs":    $l2_ws,
+                "sequencerFeed":  $feed_url
+            },
+            "advertised": {
+                "executionRpc":   $adv_rpc,
+                "executionWs":    $adv_ws,
+                "sequencerFeed":  $adv_feed
+            }
         },
         "rollup": {
             "rollup":           $rollup,

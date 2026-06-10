@@ -25,18 +25,20 @@ async function main() {
   }
 
   const l2Provider = new ethers.JsonRpcProvider(L2_RPC);
-  const wallet = new ethers.Wallet(DEPOSITOR_PK, l2Provider);
+  const baseWallet = new ethers.Wallet(DEPOSITOR_PK, l2Provider);
+  const wallet = new ethers.NonceManager(baseWallet);
+  const walletAddress = baseWallet.address;
 
   // key → address 검증
-  if (wallet.address.toLowerCase() !== DEPOSITOR_ADDR.toLowerCase()) {
+  if (walletAddress.toLowerCase() !== DEPOSITOR_ADDR.toLowerCase()) {
     console.error(`[ERROR] DEPOSITOR_PRIVATE_KEY 주소 불일치`);
-    console.error(`  파생된 주소: ${wallet.address.toLowerCase()}`);
+    console.error(`  파생된 주소: ${walletAddress.toLowerCase()}`);
     console.error(`  설정된 주소: ${DEPOSITOR_ADDR.toLowerCase()}`);
     process.exit(1);
   }
 
-  const depositorBalance = await l2Provider.getBalance(wallet.address);
-  console.log(`[INFO] L2 depositor : ${wallet.address}`);
+  const depositorBalance = await l2Provider.getBalance(walletAddress);
+  console.log(`[INFO] L2 depositor : ${walletAddress}`);
   console.log(`[INFO] L2 balance   : ${ethers.formatEther(depositorBalance)} ETH`);
 
   const targets = JSON.parse(TARGETS_JSON);
@@ -62,7 +64,7 @@ async function main() {
 
   for (const { role, address, amountEth, optional } of targets) {
     if (!address || address === '') continue;
-    if (address.toLowerCase() === wallet.address.toLowerCase()) continue;
+    if (address.toLowerCase() === walletAddress.toLowerCase()) continue;
 
     const amountWei = ethers.parseEther(amountEth);
     const currentBalance = await l2Provider.getBalance(address);
@@ -93,7 +95,7 @@ async function main() {
       continue;
     }
 
-    if (address.toLowerCase() === wallet.address.toLowerCase()) {
+    if (address.toLowerCase() === walletAddress.toLowerCase()) {
       const bal = await l2Provider.getBalance(address);
       console.log(`[SKIP] ${role}: depositor와 동일한 주소 (self-transfer 생략)`);
       results.push({
@@ -143,7 +145,7 @@ async function main() {
 
   const artifact = {
     timestamp: new Date().toISOString(),
-    depositor: wallet.address.toLowerCase(),
+    depositor: walletAddress.toLowerCase(),
     distributions: results,
   };
 

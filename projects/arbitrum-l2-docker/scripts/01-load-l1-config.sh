@@ -24,35 +24,74 @@ fi
 _ok "l1-chain-info.json 로드: $L1_INFO_FILE"
 
 # ---------------------------------------------------------------
-# 기본 필드 추출
+# artifact 필드 추출
 # ---------------------------------------------------------------
-ARTIFACT_CHAIN_ID=$(jq -r '.chainId'              "$L1_INFO_FILE")
-ARTIFACT_RPC_N0=$(jq -r '.executionRpc.node0'     "$L1_INFO_FILE")
-ARTIFACT_WS_N0=$(jq -r  '.executionWs.node0'      "$L1_INFO_FILE")
+ARTIFACT_CHAIN_ID=$(jq -r '.chainId' "$L1_INFO_FILE")
 
-_info "artifact chainId       = $ARTIFACT_CHAIN_ID"
-_info "artifact executionRpc  = $ARTIFACT_RPC_N0"
-_info "artifact executionWs   = $ARTIFACT_WS_N0"
+# advertised endpoint만 추출 — local/top-level은 참조하지 않음
+ART_ADV_RPC=$(jq -r 'if .endpoints.advertised.executionRpc != null then .endpoints.advertised.executionRpc else "" end' "$L1_INFO_FILE")
+ART_ADV_WS=$(jq -r  'if .endpoints.advertised.executionWs  != null then .endpoints.advertised.executionWs  else "" end' "$L1_INFO_FILE")
+
+_info "artifact chainId                           = $ARTIFACT_CHAIN_ID"
+_info "artifact endpoints.advertised.executionRpc = ${ART_ADV_RPC:-(없음)}"
+_info "artifact endpoints.advertised.executionWs  = ${ART_ADV_WS:-(없음)}"
 
 # ---------------------------------------------------------------
-# .env override 반영
+# Parent endpoint 결정 (우선순위)
+# 1. .env override: L1_RPC_URL / L1_WS_URL
+# 2. artifact .endpoints.advertised  ← 정식 경로
+#
+# local/top-level endpoint는 fallback으로 사용하지 않습니다.
+# advertised endpoint가 없으면 L2 deploy를 진행하지 않습니다.
 # ---------------------------------------------------------------
 echo ""
 echo "--- endpoint 결정 ---"
-PARENT_CHAIN_RPC="${L1_RPC_URL:-$ARTIFACT_RPC_N0}"
-PARENT_CHAIN_WS="${L1_WS_URL:-$ARTIFACT_WS_N0}"
-PARENT_CHAIN_ID="${L1_CHAIN_ID:-$ARTIFACT_CHAIN_ID}"
 
 if [ -n "${L1_RPC_URL:-}" ]; then
-    _info "PARENT_CHAIN_RPC = $PARENT_CHAIN_RPC  (L1_RPC_URL override)"
+    PARENT_CHAIN_RPC="$L1_RPC_URL"
+    PARENT_CHAIN_RPC_SOURCE="env.L1_RPC_URL"
+elif [ -n "$ART_ADV_RPC" ] && [ "$ART_ADV_RPC" != "null" ]; then
+    PARENT_CHAIN_RPC="$ART_ADV_RPC"
+    PARENT_CHAIN_RPC_SOURCE="artifact.endpoints.advertised.executionRpc"
 else
-    _info "PARENT_CHAIN_RPC = $PARENT_CHAIN_RPC  (artifact)"
+    echo ""
+    echo "[ERROR] L1 advertised RPC endpoint를 찾을 수 없습니다."
+    echo ""
+    echo "  해결 방법:"
+    echo "  [방법 A] L1 .env에 advertised endpoint를 설정하고 artifact를 재생성"
+    echo "           L1_ADVERTISED_RPC_URL=http://192.168.0.10:8545"
+    echo "           pnpm run export:artifact  (ethereum-pos-docker에서 실행)"
+    echo "  [방법 B] 이 .env에 override 직접 설정"
+    echo "           L1_RPC_URL=http://192.168.0.10:8545"
+    echo ""
+    echo "  주의: localhost/127.0.0.1은 advertised endpoint로 사용하지 마세요."
+    echo "        같은 인스턴스라도 내부망 IP 또는 DNS를 사용하세요."
+    exit 1
 fi
+
 if [ -n "${L1_WS_URL:-}" ]; then
-    _info "PARENT_CHAIN_WS  = $PARENT_CHAIN_WS  (L1_WS_URL override)"
+    PARENT_CHAIN_WS="$L1_WS_URL"
+    PARENT_CHAIN_WS_SOURCE="env.L1_WS_URL"
+elif [ -n "$ART_ADV_WS" ] && [ "$ART_ADV_WS" != "null" ]; then
+    PARENT_CHAIN_WS="$ART_ADV_WS"
+    PARENT_CHAIN_WS_SOURCE="artifact.endpoints.advertised.executionWs"
 else
-    _info "PARENT_CHAIN_WS  = $PARENT_CHAIN_WS  (artifact)"
+    echo ""
+    echo "[ERROR] L1 advertised WS endpoint를 찾을 수 없습니다."
+    echo ""
+    echo "  해결 방법:"
+    echo "  [방법 A] L1 .env에 advertised endpoint를 설정하고 artifact를 재생성"
+    echo "           L1_ADVERTISED_WS_URL=ws://192.168.0.10:8546"
+    echo "           pnpm run export:artifact  (ethereum-pos-docker에서 실행)"
+    echo "  [방법 B] 이 .env에 override 직접 설정"
+    echo "           L1_WS_URL=ws://192.168.0.10:8546"
+    exit 1
 fi
+
+PARENT_CHAIN_ID="${L1_CHAIN_ID:-$ARTIFACT_CHAIN_ID}"
+
+_info "PARENT_CHAIN_RPC = $PARENT_CHAIN_RPC  ($PARENT_CHAIN_RPC_SOURCE)"
+_info "PARENT_CHAIN_WS  = $PARENT_CHAIN_WS  ($PARENT_CHAIN_WS_SOURCE)"
 _info "PARENT_CHAIN_ID  = $PARENT_CHAIN_ID"
 
 # ---------------------------------------------------------------
@@ -87,25 +126,62 @@ fi
 # ---------------------------------------------------------------
 echo ""
 echo "--- L1 finality 확인 ---"
-# finalizedEpoch may be string or number
-FINALIZED_EPOCH=$(jq -r '
-    .beacon.node0.finalizedEpoch |
-    if type == "string" then tonumber else . end
-' "$L1_INFO_FILE" 2>/dev/null || echo "0")
 
-EL_OFFLINE=$(jq -r '.beacon.node0.elOffline // true' "$L1_INFO_FILE")
+# Debug: artifact raw values
+_info "artifact beacon.node0.elOffline      = $(jq -r 'if .beacon.node0.elOffline != null then (.beacon.node0.elOffline|tostring) else "null" end' "$L1_INFO_FILE" 2>/dev/null || echo "(읽기 실패)")"
+_info "artifact beacon.node0.finalizedEpoch = $(jq -r 'if .beacon.node0.finalizedEpoch != null then (.beacon.node0.finalizedEpoch|tostring) else "null" end' "$L1_INFO_FILE" 2>/dev/null || echo "(읽기 실패)")"
 
-if [ "$EL_OFFLINE" = "false" ]; then
-    _ok "beacon node0 EL offline = false"
+# jq의 // 연산자는 falsy-alternative이므로 false // X → X 가 됨.
+# 명시적 null 체크로 false와 null을 구분해야 함.
+EL_OFFLINE=$(jq -r '
+  if .beacon.node0.elOffline != null then
+    .beacon.node0.elOffline
+  elif .beacon.node1.elOffline != null then
+    .beacon.node1.elOffline
+  elif .elOffline != null then
+    .elOffline
+  else
+    false
+  end
+' "$L1_INFO_FILE")
+
+_info "resolved elOffline = $EL_OFFLINE"
+
+case "$EL_OFFLINE" in
+  false|"false")
+    _ok "beacon EL offline = false"
+    ;;
+  true|"true")
+    _fail "beacon EL offline = true  (EL offline 상태)"
+    ;;
+  *)
+    _fail "beacon elOffline 값 해석 불가: $EL_OFFLINE"
+    ;;
+esac
+
+FINALIZED_EPOCH_RAW=$(jq -r '
+  if .beacon.node0.finalizedEpoch != null then
+    .beacon.node0.finalizedEpoch
+  elif .beacon.node1.finalizedEpoch != null then
+    .beacon.node1.finalizedEpoch
+  elif .finalizedEpoch != null then
+    .finalizedEpoch
+  else
+    "0"
+  end
+' "$L1_INFO_FILE")
+
+_info "resolved finalizedEpoch = $FINALIZED_EPOCH_RAW"
+
+if ! [[ "$FINALIZED_EPOCH_RAW" =~ ^[0-9]+$ ]]; then
+    _fail "finalizedEpoch 값 해석 불가: $FINALIZED_EPOCH_RAW"
 else
-    _fail "beacon node0 elOffline = $EL_OFFLINE  (EL offline 상태)"
-fi
-
-FINALIZED_EPOCH_INT=$(printf '%d' "${FINALIZED_EPOCH}" 2>/dev/null || echo 0)
-if [ "$FINALIZED_EPOCH_INT" -gt 0 ]; then
-    _ok "finalizedEpoch = $FINALIZED_EPOCH_INT  (finality 달성)"
-else
-    _fail "finalizedEpoch = 0  (finality 미달성 — L1이 완전히 기동되지 않았을 수 있음)"
+    FINALIZED_EPOCH_INT="$FINALIZED_EPOCH_RAW"
+    if [ "$FINALIZED_EPOCH_INT" -gt 0 ]; then
+        _ok "finalizedEpoch = $FINALIZED_EPOCH_INT  (finality 달성)"
+    else
+        _fail "finalizedEpoch = 0  (finality 미달성 — L1이 완전히 기동되지 않았을 수 있음)"
+    fi
 fi
 
 # ---------------------------------------------------------------
@@ -162,14 +238,16 @@ echo "--- resolved-l1-config.env 생성 ---"
 RESOLVED_FILE="$PROJECT_DIR/config/resolved-l1-config.env"
 cat > "$RESOLVED_FILE" <<EOF
 # Auto-generated by 01-load-l1-config.sh — do not edit manually
+PARENT_CHAIN_ID="${PARENT_CHAIN_ID}"
 PARENT_CHAIN_RPC="${PARENT_CHAIN_RPC}"
 PARENT_CHAIN_WS="${PARENT_CHAIN_WS}"
-PARENT_CHAIN_ID="${PARENT_CHAIN_ID}"
+PARENT_CHAIN_RPC_SOURCE="${PARENT_CHAIN_RPC_SOURCE}"
+PARENT_CHAIN_WS_SOURCE="${PARENT_CHAIN_WS_SOURCE}"
 L1_DEPOSITOR_ADDRESS="${DEPOSITOR_IN_ARTIFACT:-}"
 EOF
 _ok "config/resolved-l1-config.env 생성 완료"
-_info "  PARENT_CHAIN_RPC = $PARENT_CHAIN_RPC"
-_info "  PARENT_CHAIN_WS  = $PARENT_CHAIN_WS"
+_info "  PARENT_CHAIN_RPC = $PARENT_CHAIN_RPC  ($PARENT_CHAIN_RPC_SOURCE)"
+_info "  PARENT_CHAIN_WS  = $PARENT_CHAIN_WS  ($PARENT_CHAIN_WS_SOURCE)"
 _info "  PARENT_CHAIN_ID  = $PARENT_CHAIN_ID"
 
 # ---------------------------------------------------------------

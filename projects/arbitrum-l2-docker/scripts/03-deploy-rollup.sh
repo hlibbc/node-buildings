@@ -40,7 +40,7 @@ if jq -e '.alloc' "$CHAIN_CONFIG" &>/dev/null; then
 fi
 
 # 필수 환경 변수 확인
-for var in L2_DEPLOYER_PRIVATE_KEY L2_ROLLUP_OWNER_ADDRESS L2_SEQUENCER_ADDRESS L2_CHAIN_NAME; do
+for var in L2_DEPLOYER_PRIVATE_KEY L2_ROLLUP_OWNER_ADDRESS L2_BATCH_POSTER_ADDRESS L2_CHAIN_NAME; do
     if [ -z "${!var:-}" ]; then
         echo "[ERROR] $var 미설정"
         exit 1
@@ -108,6 +108,48 @@ fi
 _ok "WASM_MODULE_ROOT = $WASM_MODULE_ROOT"
 
 # ---------------------------------------------------------------
+# L1 RPC 사전 검증 (rollupcreator 컨테이너에서)
+# Hardhat 실행 전에 advertised RPC가 컨테이너에서도 도달 가능한지 확인합니다.
+# ---------------------------------------------------------------
+echo ""
+echo "--- L1 RPC 사전 검증 (rollupcreator container) ---"
+_info "PARENT_CHAIN_RPC = $PARENT_CHAIN_RPC"
+_info "rollupcreator 컨테이너에서 eth_chainId 조회 중..."
+
+CHAIN_PROBE_RESULT=$(docker compose run --rm \
+    --entrypoint sh rollupcreator \
+    -c "curl -sf --connect-timeout 5 --max-time 10 \
+        -H 'Content-Type: application/json' \
+        -d '{\"jsonrpc\":\"2.0\",\"method\":\"eth_chainId\",\"params\":[],\"id\":1}' \
+        '$PARENT_CHAIN_RPC'" 2>/dev/null || echo "")
+
+if [ -z "$CHAIN_PROBE_RESULT" ]; then
+    echo ""
+    echo "[ERROR] L1 advertised RPC is not reachable from rollupcreator container."
+    echo "        URL: $PARENT_CHAIN_RPC"
+    echo ""
+    echo "  Check:"
+    echo "  1. L1_ADVERTISED_RPC_URL in ethereum-pos-docker .env"
+    echo "  2. geth --http.addr=0.0.0.0 (not 127.0.0.1)"
+    echo "  3. docker port publish: 8545:8545"
+    echo "  4. firewall / network routing between L1 and L2 hosts"
+    exit 1
+fi
+
+CHAIN_PROBE_HEX=$(printf '%s' "$CHAIN_PROBE_RESULT" | jq -r '.result // empty' 2>/dev/null || echo "")
+if [ -z "$CHAIN_PROBE_HEX" ]; then
+    echo "[ERROR] eth_chainId 응답 파싱 실패: $CHAIN_PROBE_RESULT"
+    exit 1
+fi
+CHAIN_PROBE_DEC=$(hex_to_dec "$CHAIN_PROBE_HEX")
+if [ "$CHAIN_PROBE_DEC" = "$PARENT_CHAIN_ID" ]; then
+    _ok "L1 RPC reachable from container (chainId=$CHAIN_PROBE_DEC)"
+else
+    echo "[ERROR] L1 chainId 불일치: container=$CHAIN_PROBE_DEC, expected=$PARENT_CHAIN_ID"
+    exit 1
+fi
+
+# ---------------------------------------------------------------
 # rollupcreator — rollup/system contracts 배포
 # ---------------------------------------------------------------
 echo ""
@@ -123,7 +165,7 @@ docker compose run --rm \
     -e MAX_DATA_SIZE=117964 \
     -e OWNER_ADDRESS="$L2_ROLLUP_OWNER_ADDRESS" \
     -e WASM_MODULE_ROOT="$WASM_MODULE_ROOT" \
-    -e SEQUENCER_ADDRESS="$L2_SEQUENCER_ADDRESS" \
+    -e SEQUENCER_ADDRESS="$L2_BATCH_POSTER_ADDRESS" \
     -e AUTHORIZE_VALIDATORS=10 \
     -e CHILD_CHAIN_CONFIG_PATH="/config/l2_chain_config.json" \
     -e CHAIN_DEPLOYMENT_INFO="/config/deployment.json" \

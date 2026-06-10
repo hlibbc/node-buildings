@@ -28,6 +28,57 @@ NODE1_BEACON="http://localhost:${NODE1_BEACON_PORT:-3600}"
 DEPOSIT_ADDR="${DEPOSIT_CONTRACT_ADDRESS:-0x4242424242424242424242424242424242424242}"
 FEE_ADDR="${FEE_RECIPIENT:-0x0000000000000000000000000000000000000000}"
 
+# --- Advertised endpoint 계산 (L2 parent chain 소비용) ---
+# 우선순위:
+#   1. L1_ADVERTISED_*_URL (full URL override)
+#   2. L1_ADVERTISED_HOST + port (L1_ADVERTISED_*_PORT > NODE0_*_PORT > default)
+#   3. 없으면 빈 값 (→ L2 deploy FAIL)
+#
+# 변수 조합은 .env 안에서 하지 않고 여기서 bash 변수로 명확히 조합합니다.
+
+_adv_rpc_port="${L1_ADVERTISED_RPC_PORT:-${NODE0_RPC_PORT:-8545}}"
+_adv_ws_port="${L1_ADVERTISED_WS_PORT:-${NODE0_WS_PORT:-8546}}"
+_adv_beacon_port="${L1_ADVERTISED_BEACON_PORT:-${NODE0_BEACON_PORT:-3500}}"
+
+if [ -n "${L1_ADVERTISED_RPC_URL:-}" ]; then
+    ADV_RPC="$L1_ADVERTISED_RPC_URL"
+elif [ -n "${L1_ADVERTISED_HOST:-}" ]; then
+    ADV_RPC="http://${L1_ADVERTISED_HOST}:${_adv_rpc_port}"
+else
+    ADV_RPC=""
+fi
+
+if [ -n "${L1_ADVERTISED_WS_URL:-}" ]; then
+    ADV_WS="$L1_ADVERTISED_WS_URL"
+elif [ -n "${L1_ADVERTISED_HOST:-}" ]; then
+    ADV_WS="ws://${L1_ADVERTISED_HOST}:${_adv_ws_port}"
+else
+    ADV_WS=""
+fi
+
+if [ -n "${L1_ADVERTISED_BEACON_URL:-}" ]; then
+    ADV_BEACON="$L1_ADVERTISED_BEACON_URL"
+elif [ -n "${L1_ADVERTISED_HOST:-}" ]; then
+    ADV_BEACON="http://${L1_ADVERTISED_HOST}:${_adv_beacon_port}"
+else
+    ADV_BEACON=""
+fi
+
+if [ -n "${L1_ADVERTISED_HOST:-}" ] || \
+   [ -n "${L1_ADVERTISED_RPC_URL:-}" ] || \
+   [ -n "${L1_ADVERTISED_WS_URL:-}" ] || \
+   [ -n "${L1_ADVERTISED_BEACON_URL:-}" ]; then
+    echo "  INFO  L1 advertised RPC    = $ADV_RPC"
+    echo "  INFO  L1 advertised WS     = $ADV_WS"
+    echo "  INFO  L1 advertised Beacon = $ADV_BEACON"
+fi
+
+if [ -z "$ADV_RPC" ] || [ -z "$ADV_WS" ] || [ -z "$ADV_BEACON" ]; then
+    echo "[WARN] L1 advertised endpoint is not configured."
+    echo "[WARN] Set L1_ADVERTISED_HOST or L1_ADVERTISED_*_URL."
+    echo "[WARN] L2 deploy will fail until L1 advertised endpoint is configured."
+fi
+
 echo "=== L1 chain-info artifact 생성 ==="
 echo ""
 
@@ -155,6 +206,9 @@ jq -n \
     --arg n1Ws "$NODE1_WS" \
     --arg n0Beacon "$NODE0_BEACON" \
     --arg n1Beacon "$NODE1_BEACON" \
+    --arg advRpc "$ADV_RPC" \
+    --arg advWs "$ADV_WS" \
+    --arg advBeacon "$ADV_BEACON" \
     --arg depositAddr "$DEPOSIT_ADDR" \
     --arg feeRecipient "$FEE_ADDR" \
     --arg b0Num "$B0_NUM" \
@@ -183,6 +237,18 @@ jq -n \
         executionRpc: {node0: $n0Rpc, node1: $n1Rpc},
         executionWs:  {node0: $n0Ws,  node1: $n1Ws},
         beaconRest:   {node0: $n0Beacon, node1: $n1Beacon},
+        endpoints: {
+            local: {
+                executionRpc: $n0Rpc,
+                executionWs:  $n0Ws,
+                beaconRest:   $n0Beacon
+            },
+            advertised: {
+                executionRpc: $advRpc,
+                executionWs:  $advWs,
+                beaconRest:   $advBeacon
+            }
+        },
         depositContractAddress: $depositAddr,
         feeRecipient: $feeRecipient,
         geth: {
